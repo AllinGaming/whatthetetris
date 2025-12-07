@@ -1,6 +1,5 @@
 # What the Tetris
 
-[![Deploy Web](https://github.com/allingaming/whatthetetris/actions/workflows/deploy.yml/badge.svg)](https://github.com/allingaming/whatthetetris/actions/workflows/deploy.yml)
 [![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-live-brightgreen)](https://allingaming.github.io/whatthetetris/)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-blue)](https://flutter.dev)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -32,5 +31,5 @@ flutter run
 - Cavity fills prioritize the lowest rows first.
 
 ## Deploy (GitHub Pages)
-- GitHub Actions workflow `deploy.yml` builds `flutter build web --release` and publishes `build/web` to the `gh-pages` branch on every push to `main`.
-- Ensure Pages is set to deploy from the `gh-pages` branch in the repo settings.
+- GitHub Actions workflow `deploy.yml` builds `flutter build web --release --base-href=/whatthetetris/` and publishes the `build/web` artifact via GitHub Pages on every push to `main` (no separate branch needed).
+- Ensure Pages is set to “GitHub Actions” in the repo settings.
