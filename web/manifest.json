@@ -1,11 +1,11 @@
 {
-    "name": "agy7",
-    "short_name": "agy7",
+    "name": "What The Tetris",
+    "short_name": "What Tetris",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0B0E14",
+    "theme_color": "#66E0F4",
+    "description": "Neon triangle-half falling-blocks with Classic and Arcade modes.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
