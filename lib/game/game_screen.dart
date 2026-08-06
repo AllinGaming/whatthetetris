@@ -8,7 +8,6 @@ import '../models/active_piece.dart';
 import '../models/board.dart';
 import '../models/game_mode.dart';
 import '../models/piece.dart';
-import '../models/pieces.dart';
 import '../services/high_score_service.dart';
 import '../ui/game_side_panel.dart';
 import '../ui/mobile_stats_bar.dart';
@@ -16,6 +15,8 @@ import '../ui/widgets/floating_toast.dart';
 import '../ui/widgets/touch_dpad.dart';
 import 'board_painter.dart';
 import 'game_animations.dart';
+import 'game_board.dart';
+import 'piece_bag.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({super.key, required this.mode, required this.highScores});
@@ -27,20 +28,26 @@ class GameScreen extends StatefulWidget {
   State<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
+class _GameScreenState extends State<GameScreen>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   static const _config = Config();
+  static const _previewCount = 3;
+  static const _maxSpeedBoost = 8;
 
   late final GameAnimations _anim = GameAnimations(vsync: this);
 
-  late List<List<CellOccupancy>> _board;
+  late GameBoard _board;
   ActivePiece? _active;
-  late PieceDefinition _upcoming;
+  PieceDefinition? _held;
+  late List<PieceDefinition> _upcoming;
   GameState _state = GameState.paused;
   int _score = 0;
   int _lines = 0;
   Timer? _timer;
+  Timer? _lockTimer;
   final _focusNode = FocusNode();
   final _rand = Random();
+  late final PieceBag _pieceBag = PieceBag(random: _rand);
   int _cavityCharges = 1;
   int _speedBoost = 0;
   List<PieceCell> _lockedCells = const [];
@@ -48,44 +55,74 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   int _toastSeq = 0;
   final Map<int, ToastData> _toasts = {};
   int _combo = -1;
+  int _lockResets = 0;
+  bool _holdUsed = false;
+  bool _resolvingLock = false;
 
   GameModeConfig get cfg => widget.mode.config;
   int get _level => 1 + (_lines ~/ 10);
   Duration get _tickSpeed => cfg.speedCurve(_level, _speedBoost);
+  double get _scoreMultiplier => 1 + _speedBoost * 0.15;
+  bool get _canAcceptInput =>
+      _state == GameState.playing && !_resolvingLock && _active != null;
+  bool get _canSpeedUp =>
+      cfg.hasManualSpeedBoost &&
+      _speedBoost < _maxSpeedBoost &&
+      cfg.speedCurve(_level, _speedBoost + 1) < _tickSpeed;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    widget.highScores.addListener(_onHighScoresChanged);
     _resetBoard();
     _startGame();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    widget.highScores.removeListener(_onHighScoresChanged);
     _timer?.cancel();
+    _lockTimer?.cancel();
     _focusNode.dispose();
     _anim.dispose();
     super.dispose();
   }
 
+  void _onHighScoresChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed && _state == GameState.playing) {
+      _setPaused(true);
+    }
+  }
+
   void _resetBoard() {
-    _board = List.generate(
-      _config.rows,
-      (_) => List.generate(_config.cols, (_) => CellOccupancy()),
-    );
+    _board = GameBoard(_config);
     _cavityCharges = 1;
   }
 
   void _startGame() {
+    _timer?.cancel();
+    _lockTimer?.cancel();
     _resetBoard();
     _score = 0;
     _lines = 0;
     _cavityCharges = 1;
     _speedBoost = 0;
     _state = GameState.playing;
+    _resolvingLock = false;
     _toasts.clear();
     _combo = -1;
-    _upcoming = _randomPieceType();
+    _held = null;
+    _holdUsed = false;
+    _lockResets = 0;
+    _pieceBag.reset();
+    _upcoming = _pieceBag.takeMany(_previewCount);
     _spawnPiece();
     _restartTimer();
     setState(() {});
@@ -93,6 +130,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   void _restartTimer() {
     _timer?.cancel();
+    if (_state != GameState.playing) return;
     _timer = Timer.periodic(_tickSpeed, (_) {
       if (_state == GameState.playing) {
         _tick();
@@ -100,33 +138,25 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     });
   }
 
+  int _scaledScore(int base) => (base * _scoreMultiplier).round();
+
   void _fillCavities() {
-    if (!cfg.hasCavityFiller || _cavityCharges <= 0) return;
-    int filled = 0;
-    for (int r = _config.rows - 1; r >= 0 && filled < 1; r--) {
-      for (int c = 0; c < _config.cols && filled < 1; c++) {
-        final cell = _board[r][c];
-        if (cell.full != null) continue;
-        final hasBl = cell.bl != null;
-        final hasTr = cell.tr != null;
-        if (hasBl == hasTr) continue; // skip empty or already full
-        final color = hasBl ? cell.bl! : cell.tr!;
-        if (!hasBl) {
-          cell.bl = color;
-        } else {
-          cell.tr = color;
-        }
-        filled++;
-      }
+    if (!_canAcceptInput || !cfg.hasCavityFiller || _cavityCharges <= 0) {
+      return;
     }
-    if (filled > 0) {
+    if (_board.fillLowestCavity()) {
       _cavityCharges--;
       final cleared = _detectFullRows();
       if (cleared.isNotEmpty) {
         _collapseRows(cleared);
-        _score += _pointsForLines(cleared.length);
+        final points = _scaledScore(_pointsForLines(cleared.length));
+        _score += points;
         _lines += cleared.length;
         _cavityCharges += cleared.length;
+        _combo++;
+        _reconcileActiveAfterBoardMutation();
+        _showToast('POWER CLEAR +$points', Colors.amberAccent);
+        unawaited(HapticFeedback.mediumImpact());
       }
       _restartTimer();
       setState(() {});
@@ -134,10 +164,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   void _speedUp() {
-    if (!cfg.hasManualSpeedBoost) return;
+    if (!_canAcceptInput || !_canSpeedUp) return;
     _speedBoost++;
-    _score += 25 * _speedBoost;
     _restartTimer();
+    _showToast(
+      'RISK x${_scoreMultiplier.toStringAsFixed(2)}',
+      Colors.orangeAccent,
+    );
+    unawaited(HapticFeedback.selectionClick());
     setState(() {});
   }
 
@@ -157,7 +191,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   void _tick() {
-    if (_active == null) return;
+    if (!_canAcceptInput) return;
     final next = _active!.copyWith(row: _active!.row + 1);
     final moved = _attemptMove(
       next,
@@ -165,11 +199,25 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       curve: Curves.linear,
     );
     if (!moved) {
-      _lockPiece();
+      _scheduleLock();
     }
   }
 
-  PieceDefinition _randomPieceType() => Pieces.all[_rand.nextInt(Pieces.all.length)];
+  void _scheduleLock() {
+    if (!_canAcceptInput || _lockTimer != null) return;
+    _lockTimer = Timer(const Duration(milliseconds: 450), () {
+      _lockTimer = null;
+      if (!_canAcceptInput) return;
+      final below = _active!.copyWith(row: _active!.row + 1);
+      if (_canPlace(below)) return;
+      unawaited(_lockPiece());
+    });
+  }
+
+  void _cancelLock() {
+    _lockTimer?.cancel();
+    _lockTimer = null;
+  }
 
   int _pieceWidth(PieceDefinition def) {
     final rotation = def.rotations.first;
@@ -178,46 +226,67 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     return maxCol - minCol + 1;
   }
 
-  void _spawnPiece() {
-    final type = _upcoming;
-    _upcoming = _randomPieceType();
+  void _spawnPiece({PieceDefinition? forcedType, bool resetHold = true}) {
+    final type = forcedType ?? _upcoming.removeAt(0);
+    if (forcedType == null) _upcoming.add(_pieceBag.take());
+    _cancelLock();
+    _lockResets = 0;
+    if (resetHold) _holdUsed = false;
     final width = _pieceWidth(type);
     final spawnCol = ((_config.cols - width) ~/ 2).clamp(0, _config.cols - 1);
     _active = ActivePiece(type: type, row: 0, col: spawnCol);
     _anim.snapPiece(Offset(_active!.col.toDouble(), _active!.row.toDouble()));
     if (!_canPlace(_active!)) {
-      _state = GameState.over;
-      _active = null;
-      final isNewBest = _score > widget.highScores.bestScore(widget.mode);
-      unawaited(
-        widget.highScores.submitRun(widget.mode, score: _score, level: _level),
-      );
-      if (isNewBest) _showToast('NEW BEST!', Colors.amberAccent);
+      _endGame();
     }
   }
 
-  bool _canPlace(ActivePiece piece) {
-    for (final cell in piece.cellsOnBoard()) {
-      if (cell.row < 0 || cell.row >= _config.rows) {
-        return false;
+  void _reconcileActiveAfterBoardMutation() {
+    if (_active == null || _canPlace(_active!)) return;
+    for (int offset = 1; offset < _config.rows; offset++) {
+      final candidate = _active!.copyWith(row: _active!.row - offset);
+      if (_canPlace(candidate)) {
+        _active = candidate;
+        _anim.snapPiece(
+          Offset(candidate.col.toDouble(), candidate.row.toDouble()),
+        );
+        return;
       }
-      if (cell.col < 0 || cell.col >= _config.cols) {
-        return false;
-      }
-      final target = _board[cell.row][cell.col];
-      if (target.full != null) return false;
-      // Stop only on same-orientation triangles; opposite halves can be entered
-      // so they merge when the piece eventually locks.
-      if (cell.tri == TriHalf.bl && target.bl != null) return false;
-      if (cell.tri == TriHalf.tr && target.tr != null) return false;
     }
-    return true;
+    _endGame();
   }
+
+  void _endGame() {
+    if (_state == GameState.over) return;
+    _state = GameState.over;
+    _active = null;
+    _timer?.cancel();
+    _cancelLock();
+    _resolvingLock = false;
+    final isNewBest = _score > widget.highScores.bestScore(widget.mode);
+    unawaited(
+      widget.highScores.submitRun(widget.mode, score: _score, level: _level),
+    );
+    if (isNewBest) _showToast('NEW BEST!', Colors.amberAccent);
+  }
+
+  ActivePiece? get _ghostPiece {
+    if (_active == null) return null;
+    var ghost = _active!;
+    while (true) {
+      final next = ghost.copyWith(row: ghost.row + 1);
+      if (!_canPlace(next)) return ghost;
+      ghost = next;
+    }
+  }
+
+  bool _canPlace(ActivePiece piece) => _board.canPlace(piece);
 
   bool _attemptMove(
     ActivePiece next, {
     required Duration duration,
     required Curve curve,
+    bool manual = false,
   }) {
     if (!_canPlace(next)) return false;
     _active = next;
@@ -226,34 +295,73 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       duration: duration,
       curve: curve,
     );
+    if (manual && _lockTimer != null) {
+      final below = next.copyWith(row: next.row + 1);
+      if (_canPlace(below)) {
+        _cancelLock();
+      } else if (_lockResets < 15) {
+        _lockResets++;
+        _cancelLock();
+        _scheduleLock();
+      }
+    }
     setState(() {});
     return true;
   }
 
   void _mirrorActive() {
-    if (_active == null) return;
+    if (!_canAcceptInput) return;
     final toggled = _active!.copyWith(mirrored: !_active!.mirrored);
-    _attemptMove(
+    final moved = _attemptMove(
       toggled,
       duration: const Duration(milliseconds: 90),
       curve: Curves.easeOutCubic,
+      manual: true,
     );
+    if (moved) unawaited(HapticFeedback.selectionClick());
   }
 
-  bool _tryMove({int dx = 0, int dy = 0, int rotDelta = 0}) {
-    if (_active == null) return false;
-    final rotCount = _active!.type.rotations.length;
-    final rawRot = (_active!.rotation + rotDelta) % rotCount;
-    final nextRot = rawRot < 0 ? rawRot + rotCount : rawRot;
+  bool _tryMove({int dx = 0, int dy = 0}) {
+    if (!_canAcceptInput) return false;
     final next = _active!.copyWith(
       row: _active!.row + dy,
       col: _active!.col + dx,
-      rotation: nextRot,
     );
     return _attemptMove(
       next,
       duration: const Duration(milliseconds: 90),
       curve: Curves.easeOutCubic,
+      manual: true,
+    );
+  }
+
+  bool _tryRotate(int rotDelta) {
+    if (!_canAcceptInput) return false;
+    final rotCount = _active!.type.rotations.length;
+    final rawRot = (_active!.rotation + rotDelta) % rotCount;
+    final nextRot = rawRot < 0 ? rawRot + rotCount : rawRot;
+    const kicks = [0, -1, 1, -2, 2];
+    for (final dx in kicks) {
+      final next = _active!.copyWith(col: _active!.col + dx, rotation: nextRot);
+      if (_attemptMove(
+        next,
+        duration: const Duration(milliseconds: 90),
+        curve: Curves.easeOutCubic,
+        manual: true,
+      )) {
+        unawaited(HapticFeedback.selectionClick());
+        return true;
+      }
+    }
+    final floorKick = _active!.copyWith(
+      row: _active!.row - 1,
+      rotation: nextRot,
+    );
+    return _attemptMove(
+      floorKick,
+      duration: const Duration(milliseconds: 90),
+      curve: Curves.easeOutCubic,
+      manual: true,
     );
   }
 
@@ -261,12 +369,31 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   // D-pad can reference the exact same callbacks.
   void _moveLeft() => _tryMove(dx: -1);
   void _moveRight() => _tryMove(dx: 1);
-  void _softDrop() => _tryMove(dy: 1);
-  void _rotateLeft() => _tryMove(rotDelta: -1);
-  void _rotateRight() => _tryMove(rotDelta: 1);
+  void _softDrop() {
+    if (_tryMove(dy: 1)) {
+      _score += _scaledScore(1);
+      setState(() {});
+    }
+  }
+
+  void _rotateLeft() => _tryRotate(-1);
+  void _rotateRight() => _tryRotate(1);
+
+  void _holdActive() {
+    if (!_canAcceptInput || _holdUsed) return;
+    final outgoing = _active!.type;
+    final incoming = _held;
+    _held = outgoing;
+    _active = null;
+    _holdUsed = true;
+    _spawnPiece(forcedType: incoming, resetHold: false);
+    unawaited(HapticFeedback.selectionClick());
+    setState(() {});
+  }
 
   void _hardDrop() {
-    if (_active == null) return;
+    if (!_canAcceptInput) return;
+    _cancelLock();
     int steps = 0;
     var candidate = _active!;
     while (true) {
@@ -290,26 +417,18 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         count: 10,
       );
     }
-    _score += steps * 2;
+    _score += _scaledScore(steps * 2);
+    unawaited(HapticFeedback.mediumImpact());
     setState(() {});
-    _lockPiece();
+    unawaited(_lockPiece());
   }
 
   Future<void> _lockPiece() async {
-    if (_active == null) return;
+    if (_active == null || _resolvingLock) return;
+    _resolvingLock = true;
+    _cancelLock();
     final lockedCells = _active!.cellsOnBoard();
-    for (final cell in lockedCells) {
-      final target = _board[cell.row][cell.col];
-      if (cell.kind == CellKind.full) {
-        target.full = _active!.type.color;
-      } else {
-        if (cell.tri == TriHalf.bl) {
-          target.bl = _active!.type.color;
-        } else {
-          target.tr = _active!.type.color;
-        }
-      }
-    }
+    _board.lock(_active!);
     _active = null;
     _lockedCells = lockedCells;
     _anim.lockFlash.forward(from: 0);
@@ -324,16 +443,17 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
       for (final r in clearedRows) {
         for (int c = 0; c < _config.cols; c++) {
-          final cell = _board[r][c];
+          final cell = _board.cells[r][c];
           final color = cell.full ?? cell.bl ?? cell.tr!;
           _anim.burst(Offset(c + 0.5, r + 0.5), color, count: 6);
         }
       }
       if (clearedRows.length >= 3) _anim.shake.forward(from: 0);
+      unawaited(HapticFeedback.heavyImpact());
 
       _collapseRows(clearedRows);
       final levelBefore = _level;
-      final points = _pointsForLines(clearedRows.length);
+      final points = _scaledScore(_pointsForLines(clearedRows.length));
       _score += points;
       _lines += clearedRows.length;
       if (cfg.hasCavityFiller) _cavityCharges += clearedRows.length;
@@ -361,31 +481,15 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _combo = -1;
     }
     _lockedCells = const [];
+    _resolvingLock = false;
     _spawnPiece();
     _restartTimer();
     setState(() {});
   }
 
-  List<int> _detectFullRows() => [
-    for (int r = 0; r < _config.rows; r++)
-      if (_board[r].every((c) => c.isFullyFilled)) r,
-  ];
+  List<int> _detectFullRows() => _board.detectFullRows();
 
-  void _collapseRows(List<int> rows) {
-    if (rows.isEmpty) return;
-    final rowSet = rows.toSet();
-    final remaining = [
-      for (int r = 0; r < _config.rows; r++)
-        if (!rowSet.contains(r)) _board[r],
-    ];
-    _board = [
-      ...List.generate(
-        rows.length,
-        (_) => List.generate(_config.cols, (_) => CellOccupancy()),
-      ),
-      ...remaining,
-    ];
-  }
+  void _collapseRows(List<int> rows) => _board.collapseRows(rows);
 
   void _showToast(String text, Color color, {bool big = false}) {
     final id = _toastSeq++;
@@ -396,12 +500,24 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     setState(() => _toasts.remove(id));
   }
 
+  void _setPaused(bool paused) {
+    if (paused && _state == GameState.playing) {
+      _timer?.cancel();
+      _cancelLock();
+      setState(() => _state = GameState.paused);
+    } else if (!paused && _state == GameState.paused) {
+      setState(() => _state = GameState.playing);
+      _restartTimer();
+      if (_active != null &&
+          !_canPlace(_active!.copyWith(row: _active!.row + 1))) {
+        _scheduleLock();
+      }
+    }
+  }
+
   void _togglePause() {
-    setState(() {
-      _state = _state == GameState.playing
-          ? GameState.paused
-          : GameState.playing;
-    });
+    if (_state == GameState.over) return;
+    _setPaused(_state == GameState.playing);
   }
 
   void _pauseOrPlay() {
@@ -413,45 +529,53 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   void _handleKey(KeyEvent event) {
-    if (event is! KeyDownEvent) return;
-    if (_state == GameState.over && event.logicalKey.keyLabel == ' ') {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return;
+    final isRepeat = event is KeyRepeatEvent;
+    final key = event.logicalKey;
+    if (_state == GameState.over && key == LogicalKeyboardKey.space) {
       _startGame();
       return;
     }
-    switch (event.logicalKey.keyLabel) {
-      case 'Arrow Left':
+    if (isRepeat &&
+        key != LogicalKeyboardKey.arrowLeft &&
+        key != LogicalKeyboardKey.arrowRight &&
+        key != LogicalKeyboardKey.arrowDown) {
+      return;
+    }
+    switch (key) {
+      case LogicalKeyboardKey.arrowLeft:
         _moveLeft();
         break;
-      case 'Arrow Right':
+      case LogicalKeyboardKey.arrowRight:
         _moveRight();
         break;
-      case 'Arrow Down':
+      case LogicalKeyboardKey.arrowDown:
         _softDrop();
         break;
-      case 'Arrow Up':
-      case 'w':
-      case 'W':
+      case LogicalKeyboardKey.arrowUp:
+      case LogicalKeyboardKey.keyW:
         _rotateRight();
         break;
-      case 'q':
-      case 'Q':
-      case 'z':
-      case 'Z':
+      case LogicalKeyboardKey.keyQ:
+      case LogicalKeyboardKey.keyZ:
         _rotateLeft();
         break;
-      case 'm':
-      case 'M':
+      case LogicalKeyboardKey.keyM:
         _mirrorActive();
         break;
-      case ' ':
+      case LogicalKeyboardKey.keyC:
+      case LogicalKeyboardKey.shiftLeft:
+      case LogicalKeyboardKey.shiftRight:
+        _holdActive();
+        break;
+      case LogicalKeyboardKey.space:
         _hardDrop();
         break;
-      case 'g':
-      case 'G':
+      case LogicalKeyboardKey.keyG:
         _fillCavities();
         break;
-      case 'p':
-      case 'P':
+      case LogicalKeyboardKey.keyP:
+      case LogicalKeyboardKey.escape:
         _togglePause();
         break;
     }
@@ -504,9 +628,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                     ),
                     child: CustomPaint(
                       painter: BoardPainter(
-                        board: _board,
+                        board: _board.cells,
                         active: _active,
+                        ghost: _state == GameState.playing ? _ghostPiece : null,
                         config: _config,
+                        boardRevision: _board.revision,
                         state: _state,
                         lockedCells: _lockedCells,
                         clearingRows: _clearingRows,
@@ -547,6 +673,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           cavityCharges: _cavityCharges,
           speedBoost: _speedBoost,
           upcoming: _upcoming,
+          held: _held,
+          canHold: !_holdUsed,
+          canSpeedUp: _canSpeedUp,
           toasts: _toasts,
           onRemoveToast: _removeToast,
           onPauseOrPlay: _pauseOrPlay,
@@ -558,6 +687,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           onRotateLeft: _rotateLeft,
           onRotateRight: _rotateRight,
           onMirror: _mirrorActive,
+          onHold: _holdActive,
           onSpeedUp: _speedUp,
           onFillCavities: _fillCavities,
           onMenu: () => Navigator.of(context).pop(),
@@ -581,13 +711,20 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             onMenu: () => Navigator.of(context).pop(),
           ),
           TouchDpad(
+            enabled: _state == GameState.playing && !_resolvingLock,
             onMoveLeft: _moveLeft,
             onMoveRight: _moveRight,
             onSoftDrop: _softDrop,
             onRotateLeft: _rotateLeft,
             onRotateRight: _rotateRight,
             onMirror: _mirrorActive,
+            onHold: _holdActive,
+            canHold: !_holdUsed,
             onHardDrop: _hardDrop,
+            onFillCavities: cfg.hasCavityFiller ? _fillCavities : null,
+            cavityCharges: _cavityCharges,
+            onSpeedUp: cfg.hasManualSpeedBoost ? _speedUp : null,
+            speedBoost: _speedBoost,
           ),
         ],
       ),

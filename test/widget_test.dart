@@ -45,7 +45,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Fill Cavities'), findsOneWidget);
-    expect(find.textContaining('Speed Up'), findsNothing);
+    expect(find.textContaining('Speed +'), findsNothing);
     expect(find.text('Mirror (M)'), findsOneWidget);
   });
 
@@ -60,7 +60,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Fill Cavities'), findsOneWidget);
-    expect(find.textContaining('Speed Up'), findsOneWidget);
+    expect(find.textContaining('Speed +'), findsOneWidget);
   });
 
   testWidgets('a wide window gets the desktop side panel, not the touch pad', (
@@ -99,11 +99,14 @@ void main() {
     expect(find.byType(TouchDpad), findsOneWidget);
     expect(find.byType(MobileStatsBar), findsOneWidget);
     expect(find.byType(GameSidePanel), findsNothing);
+
+    final pad = tester.widget<TouchDpad>(find.byType(TouchDpad));
+    expect(pad.onFillCavities, isNotNull);
+    expect(pad.onSpeedUp, isNotNull);
+    expect(pad.canHold, isTrue);
   });
 
-  testWidgets('the board actually renders at a real size, not collapsed to zero', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('pausing disables gameplay buttons', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({});
     final highScores = await HighScoreService.create();
     tester.view.physicalSize = const Size(1200, 900);
@@ -112,17 +115,42 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(HalfBlockPyramidApp(highScores: highScores));
-    await tester.tap(find.text('Arcade'));
+    await tester.tap(find.text('Classic'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Pause'));
+    await tester.pump();
 
-    final board = find.byWidgetPredicate(
-      (widget) => widget is CustomPaint && widget.painter is BoardPainter,
+    final hardDrop = find.ancestor(
+      of: find.text('Hard Drop'),
+      matching: find.byType(ElevatedButton),
     );
-    expect(board, findsOneWidget);
-    // A collapsed/near-zero board (e.g. from a stray Stack loosening its
-    // constraints) is the exact bug this guards against.
-    final size = tester.getSize(board);
-    expect(size.width, greaterThan(200));
-    expect(size.height, greaterThan(200));
+    expect(tester.widget<ElevatedButton>(hardDrop).onPressed, isNull);
+    expect(find.text('Resume'), findsOneWidget);
   });
+
+  testWidgets(
+    'the board actually renders at a real size, not collapsed to zero',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final highScores = await HighScoreService.create();
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(HalfBlockPyramidApp(highScores: highScores));
+      await tester.tap(find.text('Arcade'));
+      await tester.pumpAndSettle();
+
+      final board = find.byWidgetPredicate(
+        (widget) => widget is CustomPaint && widget.painter is BoardPainter,
+      );
+      expect(board, findsOneWidget);
+      // A collapsed/near-zero board (e.g. from a stray Stack loosening its
+      // constraints) is the exact bug this guards against.
+      final size = tester.getSize(board);
+      expect(size.width, greaterThan(200));
+      expect(size.height, greaterThan(200));
+    },
+  );
 }

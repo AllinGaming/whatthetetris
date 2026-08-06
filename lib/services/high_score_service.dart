@@ -1,9 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/game_mode.dart';
 
 /// Persists a best score/level per mode across sessions.
-class HighScoreService {
+class HighScoreService extends ChangeNotifier {
   HighScoreService(this._prefs);
 
   final SharedPreferences _prefs;
@@ -21,11 +22,15 @@ class HighScoreService {
     required int score,
     required int level,
   }) async {
+    var changed = false;
     if (score > bestScore(mode)) {
-      await _prefs.setInt('best_score_${mode.name}', score);
+      changed =
+          (await _prefs.setInt('best_score_${mode.name}', score)) || changed;
     }
     if (level > bestLevel(mode)) {
-      await _prefs.setInt('best_level_${mode.name}', level);
+      changed =
+          (await _prefs.setInt('best_level_${mode.name}', level)) || changed;
     }
+    if (changed) notifyListeners();
   }
 }

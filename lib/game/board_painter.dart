@@ -10,7 +10,9 @@ class BoardPainter extends CustomPainter {
   BoardPainter({
     required this.board,
     required this.active,
+    required this.ghost,
     required this.config,
+    required this.boardRevision,
     required this.state,
     required this.lockedCells,
     required this.clearingRows,
@@ -19,7 +21,9 @@ class BoardPainter extends CustomPainter {
 
   final List<List<CellOccupancy>> board;
   final ActivePiece? active;
+  final ActivePiece? ghost;
   final Config config;
+  final int boardRevision;
   final GameState state;
   final List<PieceCell> lockedCells;
   final List<int> clearingRows;
@@ -97,6 +101,23 @@ class BoardPainter extends CustomPainter {
       }
     }
 
+    if (ghost != null && active != null && ghost!.row != active!.row) {
+      for (final cellPos in ghost!.cellsOnBoard()) {
+        final rect = rectFor(cellPos.row.toDouble(), cellPos.col.toDouble());
+        if (cellPos.kind == CellKind.full) {
+          paintFullCell(canvas, rect, ghost!.type.color, opacity: 0.18);
+        } else {
+          paintTriHalf(
+            canvas,
+            rect,
+            cellPos.tri!,
+            ghost!.type.color,
+            opacity: 0.22,
+          );
+        }
+      }
+    }
+
     if (active != null) {
       final basePos = Offset(active!.col.toDouble(), active!.row.toDouble());
       final animOffset = anim.piecePos - basePos;
@@ -108,7 +129,13 @@ class BoardPainter extends CustomPainter {
         if (cellPos.kind == CellKind.full) {
           paintFullCell(canvas, rect, active!.type.color, glow: 0.15);
         } else {
-          paintTriHalf(canvas, rect, cellPos.tri!, active!.type.color, glow: 0.15);
+          paintTriHalf(
+            canvas,
+            rect,
+            cellPos.tri!,
+            active!.type.color,
+            glow: 0.15,
+          );
         }
       }
     }
@@ -178,7 +205,9 @@ class BoardPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant BoardPainter oldDelegate) {
     return oldDelegate.board != board ||
+        oldDelegate.boardRevision != boardRevision ||
         oldDelegate.active != active ||
+        oldDelegate.ghost != ghost ||
         oldDelegate.state != state ||
         oldDelegate.lockedCells != lockedCells ||
         oldDelegate.clearingRows != clearingRows;

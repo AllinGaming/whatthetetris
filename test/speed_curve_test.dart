@@ -28,21 +28,25 @@ void main() {
     expect(boosted, greaterThanOrEqualTo(SpeedCurve.floorMs));
   });
 
-  test('arcade is faster than classic by default, at every level, unboosted', () {
-    for (int level = 1; level <= 30; level++) {
-      final classicMs = SpeedCurve.classic(level, 0).inMilliseconds;
-      final arcadeMs = SpeedCurve.arcade(level, 0).inMilliseconds;
+  test(
+    'arcade is faster than classic by default, at every level, unboosted',
+    () {
+      for (int level = 1; level <= 30; level++) {
+        final classicMs = SpeedCurve.classic(level, 0).inMilliseconds;
+        final arcadeMs = SpeedCurve.arcade(level, 0).inMilliseconds;
+        expect(
+          arcadeMs,
+          lessThanOrEqualTo(classicMs),
+          reason:
+              'level $level: arcade ($arcadeMs) should be at least as fast '
+              'as classic ($classicMs)',
+        );
+      }
+      // And meaningfully so partway through a run, not just marginally.
       expect(
-        arcadeMs,
-        lessThanOrEqualTo(classicMs),
-        reason: 'level $level: arcade ($arcadeMs) should be at least as fast '
-            'as classic ($classicMs)',
+        SpeedCurve.arcade(10, 0).inMilliseconds,
+        lessThan(SpeedCurve.classic(10, 0).inMilliseconds * 0.8),
       );
-    }
-    // And meaningfully so partway through a run, not just marginally.
-    expect(
-      SpeedCurve.arcade(10, 0).inMilliseconds,
-      lessThan(SpeedCurve.classic(10, 0).inMilliseconds * 0.8),
-    );
-  });
+    },
+  );
 }

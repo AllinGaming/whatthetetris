@@ -23,7 +23,7 @@ class MobileStatsBar extends StatelessWidget {
   final int score;
   final int lines;
   final int level;
-  final PieceDefinition upcoming;
+  final List<PieceDefinition> upcoming;
   final VoidCallback onPauseOrPlay;
   final VoidCallback onMenu;
 
@@ -43,12 +43,14 @@ class MobileStatsBar extends StatelessWidget {
           IconButton(
             onPressed: onMenu,
             icon: const Icon(Icons.menu, color: Colors.white70),
+            tooltip: 'Menu',
           ),
           _MiniStat(label: 'Score', value: score),
           _MiniStat(label: 'Lines', value: lines),
           _MiniStat(label: 'Lvl', value: level),
           const Spacer(),
-          NextPiecePreview(piece: upcoming),
+          if (upcoming.isNotEmpty)
+            NextPiecePreview(piece: upcoming.first, size: 52),
           const SizedBox(width: 4),
           IconButton(
             onPressed: onPauseOrPlay,
@@ -56,6 +58,11 @@ class MobileStatsBar extends StatelessWidget {
               state == GameState.paused ? Icons.play_arrow : Icons.pause,
               color: accent,
             ),
+            tooltip: switch (state) {
+              GameState.playing => 'Pause',
+              GameState.paused => 'Resume',
+              GameState.over => 'Play again',
+            },
           ),
         ],
       ),

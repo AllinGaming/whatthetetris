@@ -10,7 +10,8 @@ List<PieceCell> _triangulate(
   // so an entire piece shares one orientation and flips together on rotate.
   return squares
       .map(
-        (sq) => PieceCell(row: sq.row, col: sq.col, kind: CellKind.tri, tri: tri),
+        (sq) =>
+            PieceCell(row: sq.row, col: sq.col, kind: CellKind.tri, tri: tri),
       )
       .toList();
 }

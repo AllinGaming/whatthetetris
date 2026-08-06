@@ -33,6 +33,7 @@ void paintTriHalf(
   TriHalf tri,
   Color color, {
   double glow = 0,
+  double opacity = 1,
 }) {
   final path = triHalfPath(rect, tri);
   final lit = Color.lerp(color, Colors.white, glow * 0.85)!;
@@ -43,7 +44,7 @@ void paintTriHalf(
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2 + glow * 5
-        ..color = color.withValues(alpha: 0.45 * glow)
+        ..color = color.withValues(alpha: 0.45 * glow * opacity)
         ..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 + glow * 9),
     );
   }
@@ -52,7 +53,10 @@ void paintTriHalf(
     path,
     Paint()
       ..shader = LinearGradient(
-        colors: [lit.withValues(alpha: 0.95), lit.withValues(alpha: 0.6)],
+        colors: [
+          lit.withValues(alpha: 0.95 * opacity),
+          lit.withValues(alpha: 0.6 * opacity),
+        ],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       ).createShader(rect),
@@ -61,12 +65,18 @@ void paintTriHalf(
     path,
     Paint()
       ..style = PaintingStyle.stroke
-      ..color = Colors.white.withValues(alpha: 0.18 + glow * 0.4)
+      ..color = Colors.white.withValues(alpha: (0.18 + glow * 0.4) * opacity)
       ..strokeWidth = 1,
   );
 }
 
-void paintFullCell(Canvas canvas, Rect rect, Color color, {double glow = 0}) {
-  paintTriHalf(canvas, rect, TriHalf.bl, color, glow: glow);
-  paintTriHalf(canvas, rect, TriHalf.tr, color, glow: glow);
+void paintFullCell(
+  Canvas canvas,
+  Rect rect,
+  Color color, {
+  double glow = 0,
+  double opacity = 1,
+}) {
+  paintTriHalf(canvas, rect, TriHalf.bl, color, glow: glow, opacity: opacity);
+  paintTriHalf(canvas, rect, TriHalf.tr, color, glow: glow, opacity: opacity);
 }

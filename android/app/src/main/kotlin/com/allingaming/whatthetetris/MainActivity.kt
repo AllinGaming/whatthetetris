@@ -1,4 +1,4 @@
-package com.example.agy7
+package com.allingaming.whatthetetris
 
 import io.flutter.embedding.android.FlutterActivity
 

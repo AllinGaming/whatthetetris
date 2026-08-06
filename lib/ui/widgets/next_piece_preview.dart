@@ -4,22 +4,35 @@ import '../../game/tri_paint.dart';
 import '../../models/piece.dart';
 
 class NextPiecePreview extends StatelessWidget {
-  const NextPiecePreview({super.key, required this.piece});
+  const NextPiecePreview({
+    super.key,
+    required this.piece,
+    this.size = 64,
+    this.semanticLabel = 'Next piece',
+  });
 
   final PieceDefinition piece;
+  final double size;
+  final String semanticLabel;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 64,
-      height: 64,
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: Colors.black26,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white12),
+    return Semantics(
+      image: true,
+      label: '$semanticLabel: ${piece.name}',
+      child: ExcludeSemantics(
+        child: Container(
+          width: size,
+          height: size,
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: Colors.black26,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white12),
+          ),
+          child: CustomPaint(painter: _NextPiecePainter(piece)),
+        ),
       ),
-      child: CustomPaint(painter: _NextPiecePainter(piece)),
     );
   }
 }

@@ -15,12 +15,14 @@ class HoldRepeatButton extends StatefulWidget {
     super.key,
     required this.onHold,
     required this.child,
+    this.semanticLabel,
     this.initialDelay = const Duration(milliseconds: 180),
     this.repeatInterval = const Duration(milliseconds: 50),
   });
 
   final VoidCallback onHold;
   final Widget child;
+  final String? semanticLabel;
   final Duration initialDelay;
   final Duration repeatInterval;
 
@@ -34,10 +36,14 @@ class _HoldRepeatButtonState extends State<HoldRepeatButton> {
   bool _pressed = false;
 
   void _start(PointerDownEvent _) {
+    if (_pressed) return;
     widget.onHold();
     setState(() => _pressed = true);
     _initialTimer = Timer(widget.initialDelay, () {
-      _repeatTimer = Timer.periodic(widget.repeatInterval, (_) => widget.onHold());
+      _repeatTimer = Timer.periodic(
+        widget.repeatInterval,
+        (_) => widget.onHold(),
+      );
     });
   }
 
@@ -58,15 +64,20 @@ class _HoldRepeatButtonState extends State<HoldRepeatButton> {
 
   @override
   Widget build(BuildContext context) {
-    return Listener(
-      onPointerDown: _start,
-      onPointerUp: _stop,
-      onPointerCancel: _stop,
-      child: AnimatedScale(
-        scale: _pressed ? 0.9 : 1.0,
-        duration: const Duration(milliseconds: 80),
-        curve: Curves.easeOut,
-        child: widget.child,
+    return Semantics(
+      button: true,
+      label: widget.semanticLabel,
+      onTap: widget.onHold,
+      child: Listener(
+        onPointerDown: _start,
+        onPointerUp: _stop,
+        onPointerCancel: _stop,
+        child: AnimatedScale(
+          scale: _pressed ? 0.9 : 1.0,
+          duration: const Duration(milliseconds: 80),
+          curve: Curves.easeOut,
+          child: widget.child,
+        ),
       ),
     );
   }

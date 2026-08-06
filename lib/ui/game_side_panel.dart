@@ -24,6 +24,9 @@ class GameSidePanel extends StatelessWidget {
     required this.cavityCharges,
     required this.speedBoost,
     required this.upcoming,
+    required this.held,
+    required this.canHold,
+    required this.canSpeedUp,
     required this.toasts,
     required this.onRemoveToast,
     required this.onPauseOrPlay,
@@ -35,6 +38,7 @@ class GameSidePanel extends StatelessWidget {
     required this.onRotateLeft,
     required this.onRotateRight,
     required this.onMirror,
+    required this.onHold,
     required this.onSpeedUp,
     required this.onFillCavities,
     required this.onMenu,
@@ -50,7 +54,10 @@ class GameSidePanel extends StatelessWidget {
   final int bestLevel;
   final int cavityCharges;
   final int speedBoost;
-  final PieceDefinition upcoming;
+  final List<PieceDefinition> upcoming;
+  final PieceDefinition? held;
+  final bool canHold;
+  final bool canSpeedUp;
   final Map<int, ToastData> toasts;
   final ValueChanged<int> onRemoveToast;
   final VoidCallback onPauseOrPlay;
@@ -62,34 +69,55 @@ class GameSidePanel extends StatelessWidget {
   final VoidCallback onRotateLeft;
   final VoidCallback onRotateRight;
   final VoidCallback onMirror;
+  final VoidCallback onHold;
   final VoidCallback onSpeedUp;
   final VoidCallback onFillCavities;
   final VoidCallback onMenu;
 
-  Widget _holdIcon(BuildContext context, IconData icon, VoidCallback onHold) {
-    return HoldRepeatButton(
-      onHold: onHold,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(20),
+  Widget _holdIcon(
+    BuildContext context,
+    IconData icon,
+    String label,
+    VoidCallback? onHold,
+  ) {
+    final child = Tooltip(
+      message: label,
+      child: Semantics(
+        button: true,
+        enabled: onHold != null,
+        label: label,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Icon(
+            icon,
+            size: 20,
+            color: onHold == null ? Colors.white38 : null,
+          ),
         ),
-        child: Icon(icon, size: 20),
       ),
     );
+    return onHold == null
+        ? child
+        : HoldRepeatButton(onHold: onHold, semanticLabel: label, child: child);
   }
 
   @override
   Widget build(BuildContext context) {
     final cfg = mode.config;
     final accent = Theme.of(context).colorScheme.primary;
+    final controlsEnabled = state == GameState.playing;
     return Container(
       width: width,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.35),
-        border: Border(left: BorderSide(color: accent.withValues(alpha: 0.6), width: 2)),
+        border: Border(
+          left: BorderSide(color: accent.withValues(alpha: 0.6), width: 2),
+        ),
       ),
       child: SingleChildScrollView(
         child: Column(
@@ -146,17 +174,26 @@ class GameSidePanel extends StatelessWidget {
             StatRow(label: 'Lines', value: lines),
             StatRow(label: 'Level', value: level, best: bestLevel),
             const SizedBox(height: 12),
+            Text(
+              'Next',
+              style: Theme.of(
+                context,
+              ).textTheme.labelMedium?.copyWith(color: Colors.white54),
+            ),
+            const SizedBox(height: 6),
             Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text(
-                  'Next',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelMedium?.copyWith(color: Colors.white54),
-                ),
-                const SizedBox(width: 10),
-                NextPiecePreview(piece: upcoming),
+                for (int i = 0; i < upcoming.length && i < 3; i++) ...[
+                  if (i > 0) const SizedBox(width: 6),
+                  NextPiecePreview(piece: upcoming[i], size: 44),
+                ],
+                const Spacer(),
+                if (held != null)
+                  NextPiecePreview(
+                    piece: held!,
+                    size: 44,
+                    semanticLabel: 'Held piece',
+                  ),
               ],
             ),
             const SizedBox(height: 12),
@@ -166,35 +203,62 @@ class GameSidePanel extends StatelessWidget {
               children: [
                 JuicyButton(
                   onPressed: onPauseOrPlay,
-                  child: Text(state == GameState.paused ? 'Play' : 'Pause'),
+                  child: Text(switch (state) {
+                    GameState.playing => 'Pause',
+                    GameState.paused => 'Resume',
+                    GameState.over => 'Play Again',
+                  }),
                 ),
-                _holdIcon(context, Icons.arrow_back, onMoveLeft),
-                _holdIcon(context, Icons.arrow_downward, onSoftDrop),
-                _holdIcon(context, Icons.arrow_forward, onMoveRight),
+                _holdIcon(
+                  context,
+                  Icons.arrow_back,
+                  'Move left',
+                  controlsEnabled ? onMoveLeft : null,
+                ),
+                _holdIcon(
+                  context,
+                  Icons.arrow_downward,
+                  'Soft drop',
+                  controlsEnabled ? onSoftDrop : null,
+                ),
+                _holdIcon(
+                  context,
+                  Icons.arrow_forward,
+                  'Move right',
+                  controlsEnabled ? onMoveRight : null,
+                ),
                 JuicyButton(
-                  onPressed: onHardDrop,
+                  onPressed: controlsEnabled ? onHardDrop : null,
                   child: const Text('Hard Drop'),
                 ),
                 JuicyButton(
-                  onPressed: onRotateLeft,
+                  onPressed: controlsEnabled ? onRotateLeft : null,
                   child: const Text('⟲ Rotate Left'),
                 ),
                 JuicyButton(
-                  onPressed: onRotateRight,
+                  onPressed: controlsEnabled ? onRotateRight : null,
                   child: const Text('⟳ Rotate Right'),
                 ),
                 JuicyButton(
-                  onPressed: onMirror,
+                  onPressed: controlsEnabled ? onMirror : null,
                   child: const Text('Mirror (M)'),
+                ),
+                JuicyButton(
+                  onPressed: controlsEnabled && canHold ? onHold : null,
+                  child: const Text('Hold (C)'),
                 ),
                 if (cfg.hasManualSpeedBoost)
                   JuicyButton(
-                    onPressed: onSpeedUp,
-                    child: Text('Speed Up (x${1 + speedBoost * 0.2})'),
+                    onPressed: controlsEnabled && canSpeedUp ? onSpeedUp : null,
+                    child: Text(
+                      'Speed +${speedBoost * 20}%  Score x${(1 + speedBoost * 0.15).toStringAsFixed(2)}',
+                    ),
                   ),
                 if (cfg.hasCavityFiller)
                   JuicyButton(
-                    onPressed: cavityCharges > 0 ? onFillCavities : null,
+                    onPressed: controlsEnabled && cavityCharges > 0
+                        ? onFillCavities
+                        : null,
                     child: Text('Fill Cavities (G)  x$cavityCharges'),
                   ),
               ],

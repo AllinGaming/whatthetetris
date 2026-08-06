@@ -50,7 +50,11 @@ class GameAnimations {
 
   /// Retargets the movement tween toward [to], rebasing from wherever the
   /// piece is *currently* interpolated to so rapid inputs never pop.
-  void retargetPiece(Offset to, {required Duration duration, required Curve curve}) {
+  void retargetPiece(
+    Offset to, {
+    required Duration duration,
+    required Curve curve,
+  }) {
     _from = piecePos;
     _to = to;
     move.value = 0;

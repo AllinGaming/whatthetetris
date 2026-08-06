@@ -12,35 +12,45 @@ class StartScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'What The Tetris',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    shadows: neonShadows(Theme.of(context).colorScheme.primary),
+    return ListenableBuilder(
+      listenable: highScores,
+      builder: (context, _) => Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'What The Tetris',
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              shadows: neonShadows(
+                                Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Triangle-half Tetris. Pick a mode to start.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 32),
+                      _ModeCard(mode: GameMode.classic, highScores: highScores),
+                      const SizedBox(height: 16),
+                      _ModeCard(mode: GameMode.arcade, highScores: highScores),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Triangle-half Tetris. Pick a mode to start.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
-                ),
-                const SizedBox(height: 32),
-                _ModeCard(mode: GameMode.classic, highScores: highScores),
-                const SizedBox(height: 16),
-                _ModeCard(mode: GameMode.arcade, highScores: highScores),
-              ],
+              ),
             ),
           ),
         ),
@@ -97,11 +107,8 @@ class _ModeCard extends StatelessWidget {
                       children: [
                         Text(
                           cfg.label,
-                          style: Theme.of(
-                            context,
-                          ).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 6),
                         Text(

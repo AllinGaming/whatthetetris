@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 
 class StatRow extends StatelessWidget {
-  const StatRow({super.key, required this.label, required this.value, this.best});
+  const StatRow({
+    super.key,
+    required this.label,
+    required this.value,
+    this.best,
+  });
 
   final String label;
   final int value;
@@ -29,9 +34,9 @@ class StatRow extends StatelessWidget {
                 curve: Curves.easeOut,
                 builder: (context, animatedValue, _) => Text(
                   '$animatedValue',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
