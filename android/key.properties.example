@@ -1,0 +1,5 @@
+# Copy this file to key.properties and keep the real values out of source control.
+storePassword=replace-me
+keyPassword=replace-me
+keyAlias=upload
+storeFile=../keystores/upload-keystore.jks
