@@ -61,7 +61,10 @@ class GameBoard {
   /// SS6.5) — it's a per-cell callback rather than one fixed color because
   /// [PieceColorMode.duo] colors each cell by its own kind/orientation, not
   /// by piece identity, and a single piece can mix full and triangle cells.
-  void lock(ActivePiece piece, {required Color Function(PieceCell) colorForCell}) {
+  void lock(
+    ActivePiece piece, {
+    required Color Function(PieceCell) colorForCell,
+  }) {
     for (final cell in piece.cellsOnBoard()) {
       final target = cells[cell.row][cell.col];
       final color = colorForCell(cell);
@@ -139,7 +142,8 @@ class GameBoard {
       List<bool> fills;
       do {
         fills = [
-          for (int c = 0; c < config.cols; c++) random.nextDouble() < fillChance,
+          for (int c = 0; c < config.cols; c++)
+            random.nextDouble() < fillChance,
         ];
       } while (fills.every((f) => f));
       for (int col = 0; col < config.cols; col++) {

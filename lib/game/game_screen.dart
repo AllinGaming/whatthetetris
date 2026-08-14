@@ -302,7 +302,10 @@ class _GameScreenState extends State<GameScreen>
     _recorder = ReplayRecorder(seed: _seed, mode: widget.mode);
     _lastReplay = null;
     _upcoming = _pieceBag.takeMany(_previewCount);
-    _upcomingColors = List.generate(_upcoming.length, (_) => _randomPieceColor());
+    _upcomingColors = List.generate(
+      _upcoming.length,
+      (_) => _randomPieceColor(),
+    );
     if (cfg.startsPrefilled) {
       // Same seed as the piece bag, but its own Random instance — the two
       // draw from independent streams so puzzle-layout generation can't
@@ -329,7 +332,9 @@ class _GameScreenState extends State<GameScreen>
     // the tutorial overlay already provides that pause.
     final needsCountdown =
         widget.settings.hasSeenTutorial &&
-        (cfg.timeLimit != null || cfg.lineTarget != null || cfg.startsPrefilled);
+        (cfg.timeLimit != null ||
+            cfg.lineTarget != null ||
+            cfg.startsPrefilled);
     if (needsCountdown) {
       _beginReadyCountdown();
     } else {
@@ -949,7 +954,11 @@ class _GameScreenState extends State<GameScreen>
     _heldColor = outgoingColor;
     _active = null;
     _holdUsed = true;
-    _spawnPiece(forcedType: incoming, forcedColor: incomingColor, resetHold: false);
+    _spawnPiece(
+      forcedType: incoming,
+      forcedColor: incomingColor,
+      resetHold: false,
+    );
     unawaited(_haptic(HapticFeedback.selectionClick));
     unawaited(widget.audio.play(Sfx.move));
     setState(() {});
