@@ -5,9 +5,9 @@ import 'package:whatthetetris/ui/widgets/mirror_flip_demo.dart';
 
 /// Golden-image snapshots purely for visual inspection (no browser/screenshot
 /// tool is available in this environment) — not meant as a strict pixel-diff
-/// regression gate. See fusion_hero_golden_test.dart for why the dark
-/// backdrop has to be inside the captured widget (a Key'd Container), not
-/// an ancestor.
+/// regression gate. `matchesGoldenFile` only rasterizes the finder's own
+/// bounds, not an ancestor's background, so the dark backdrop has to be
+/// inside the captured widget itself (a Key'd Container), not an ancestor.
 void main() {
   const backdropKey = Key('backdrop');
 

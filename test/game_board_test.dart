@@ -130,10 +130,7 @@ void main() {
 
   test('seedPuzzle only fills the bottom half, leaving the top empty', () {
     final board = GameBoard(const Config(rows: 10, cols: 6));
-    board.seedPuzzle(
-      Random(1),
-      (kind, tri) => Colors.grey,
-    );
+    board.seedPuzzle(Random(1), (kind, tri) => Colors.grey);
 
     for (int row = 0; row < 5; row++) {
       expect(

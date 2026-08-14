@@ -367,9 +367,8 @@ void main() {
 
       expect(
         painter.board.any(
-          (row) => row.any(
-            (c) => c.full != null || c.bl != null || c.tr != null,
-          ),
+          (row) =>
+              row.any((c) => c.full != null || c.bl != null || c.tr != null),
         ),
         isTrue,
         reason:
