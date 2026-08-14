@@ -9,9 +9,12 @@ import '../models/pieces.dart';
 /// seeded [Random] makes sessions reproducible for tests, replays, and future
 /// daily challenges.
 class PieceBag {
-  PieceBag({Random? random}) : _random = random ?? Random();
+  PieceBag({Random? random, List<PieceDefinition>? pieces})
+    : _random = random ?? Random(),
+      _pieces = pieces ?? Pieces.all;
 
   final Random _random;
+  final List<PieceDefinition> _pieces;
   final List<PieceDefinition> _pending = [];
 
   PieceDefinition take() {
@@ -29,7 +32,7 @@ class PieceBag {
 
   void _ensureAvailable(int count) {
     while (_pending.length < count) {
-      final bag = List<PieceDefinition>.of(Pieces.all)..shuffle(_random);
+      final bag = List<PieceDefinition>.of(_pieces)..shuffle(_random);
       _pending.addAll(bag);
     }
   }

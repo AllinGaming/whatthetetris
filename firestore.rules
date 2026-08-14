@@ -1,0 +1,49 @@
+rules_version = '2';
+
+// Matches the data model actually implemented in
+// lib/services/cloud_backup_service.dart (docs/TECHNICAL_ARCHITECTURE.md SS5) —
+// one document per user rather than the subcollection sketch originally
+// drafted, since a single-document transaction is what makes the
+// highest-value-wins merge in CloudBackupService atomic and simple.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{uid} {
+      // The owner can read/write their own document, but never the
+      // `entitlements` field — that's written only by the RevenueCat
+      // webhook Cloud Function (via the Admin SDK, which bypasses these
+      // rules entirely), so a client can never spoof its own subscription
+      // state (docs/TECHNICAL_ARCHITECTURE.md SS5).
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && !('entitlements' in request.resource.data);
+      allow update: if request.auth != null
+        && request.auth.uid == uid
+        && !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['entitlements']);
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Leaderboards and Daily Challenge: world-readable, but never
+    // client-writable. Scores only ever land here via the `submitScore`
+    // Cloud Function (functions/src/index.ts), which re-simulates the
+    // submitted replay before accepting it — docs/RELEASE_CHECKLIST.md's
+    // "never trust a client-provided score" requirement, enforced at the
+    // rules layer, not just by convention.
+    match /leaderboards/{mode}/entries/{uid} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /dailyChallenge/{date}/entries/{uid} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Deny everything else by default.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
