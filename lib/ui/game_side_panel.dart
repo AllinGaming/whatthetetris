@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/board.dart';
 import '../models/game_mode.dart';
 import '../models/piece.dart';
+import '../models/theme_palette.dart';
 import 'widgets/floating_toast.dart';
 import 'widgets/hold_repeat_button.dart';
 import 'widgets/juicy_button.dart';
@@ -21,10 +22,15 @@ class GameSidePanel extends StatelessWidget {
     required this.level,
     required this.bestScore,
     required this.bestLevel,
+    this.modeClock,
     required this.cavityCharges,
     required this.speedBoost,
     required this.upcoming,
+    required this.upcomingColors,
     required this.held,
+    required this.heldColor,
+    required this.theme,
+    required this.colorMode,
     required this.canHold,
     required this.canSpeedUp,
     required this.toasts,
@@ -42,6 +48,7 @@ class GameSidePanel extends StatelessWidget {
     required this.onSpeedUp,
     required this.onFillCavities,
     required this.onMenu,
+    required this.onShare,
   });
 
   final double width;
@@ -52,10 +59,15 @@ class GameSidePanel extends StatelessWidget {
   final int level;
   final int bestScore;
   final int bestLevel;
+  final String? modeClock;
   final int cavityCharges;
   final int speedBoost;
   final List<PieceDefinition> upcoming;
+  final List<Color> upcomingColors;
   final PieceDefinition? held;
+  final Color? heldColor;
+  final ThemePalette theme;
+  final PieceColorMode colorMode;
   final bool canHold;
   final bool canSpeedUp;
   final Map<int, ToastData> toasts;
@@ -73,6 +85,7 @@ class GameSidePanel extends StatelessWidget {
   final VoidCallback onSpeedUp;
   final VoidCallback onFillCavities;
   final VoidCallback onMenu;
+  final VoidCallback onShare;
 
   Widget _holdIcon(
     BuildContext context,
@@ -154,6 +167,17 @@ class GameSidePanel extends StatelessWidget {
                 context,
               ).textTheme.bodySmall?.copyWith(color: Colors.white70),
             ),
+            if (modeClock != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                modeClock!,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             SizedBox(
               height: 24,
@@ -185,7 +209,12 @@ class GameSidePanel extends StatelessWidget {
               children: [
                 for (int i = 0; i < upcoming.length && i < 3; i++) ...[
                   if (i > 0) const SizedBox(width: 6),
-                  NextPiecePreview(piece: upcoming[i], size: 44),
+                  NextPiecePreview(
+                    piece: upcoming[i],
+                    size: 44,
+                    colorMode: colorMode,
+                    colorOverride: upcomingColors[i],
+                  ),
                 ],
                 const Spacer(),
                 if (held != null)
@@ -193,6 +222,8 @@ class GameSidePanel extends StatelessWidget {
                     piece: held!,
                     size: 44,
                     semanticLabel: 'Held piece',
+                    colorMode: colorMode,
+                    colorOverride: heldColor,
                   ),
               ],
             ),
@@ -265,9 +296,20 @@ class GameSidePanel extends StatelessWidget {
             ),
             if (state == GameState.over) ...[
               const SizedBox(height: 16),
-              FilledButton(
-                onPressed: onRestart,
-                child: const Text('Play Again'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton(
+                    onPressed: onRestart,
+                    child: const Text('Play Again'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: onShare,
+                    icon: const Icon(Icons.share, size: 18),
+                    label: const Text('Share'),
+                  ),
+                ],
               ),
             ],
           ],

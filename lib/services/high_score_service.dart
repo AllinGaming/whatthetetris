@@ -17,6 +17,10 @@ class HighScoreService extends ChangeNotifier {
 
   int bestLevel(GameMode mode) => _prefs.getInt('best_level_${mode.name}') ?? 1;
 
+  /// Fastest completion time in milliseconds, for time-attack modes like
+  /// Sprint where lower is better — null until a run has ever finished.
+  int? bestTimeMs(GameMode mode) => _prefs.getInt('best_time_${mode.name}');
+
   Future<void> submitRun(
     GameMode mode, {
     required int score,
@@ -32,5 +36,14 @@ class HighScoreService extends ChangeNotifier {
           (await _prefs.setInt('best_level_${mode.name}', level)) || changed;
     }
     if (changed) notifyListeners();
+  }
+
+  /// Records a completion time for a lower-is-better mode (e.g. Sprint).
+  Future<void> submitTime(GameMode mode, int timeMs) async {
+    final current = bestTimeMs(mode);
+    if (current == null || timeMs < current) {
+      await _prefs.setInt('best_time_${mode.name}', timeMs);
+      notifyListeners();
+    }
   }
 }

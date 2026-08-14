@@ -47,3 +47,10 @@ app.*.map.json
 /android/key.properties
 *.jks
 *.keystore
+
+# Cloud Functions (functions/) — Node project, compiled/installed locally.
+functions/node_modules/
+functions/lib/
+firebase-debug.log
+firestore-debug.log
+.firebase/

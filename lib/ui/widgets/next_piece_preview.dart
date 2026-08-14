@@ -7,13 +7,22 @@ class NextPiecePreview extends StatelessWidget {
   const NextPiecePreview({
     super.key,
     required this.piece,
+    required this.colorMode,
     this.size = 64,
     this.semanticLabel = 'Next piece',
+    this.colorOverride,
   });
 
   final PieceDefinition piece;
+  final PieceColorMode colorMode;
   final double size;
   final String semanticLabel;
+
+  /// The active theme's color for this piece (docs/GDD.md SS6.5). Falls
+  /// back to the piece catalog's default color when omitted. Only used as
+  /// the resolved color under [PieceColorMode.colored] — see
+  /// [resolveCellColor].
+  final Color? colorOverride;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +39,13 @@ class NextPiecePreview extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: Colors.white12),
           ),
-          child: CustomPaint(painter: _NextPiecePainter(piece)),
+          child: CustomPaint(
+            painter: _NextPiecePainter(
+              piece,
+              colorOverride ?? piece.color,
+              colorMode,
+            ),
+          ),
         ),
       ),
     );
@@ -38,9 +53,11 @@ class NextPiecePreview extends StatelessWidget {
 }
 
 class _NextPiecePainter extends CustomPainter {
-  _NextPiecePainter(this.piece);
+  _NextPiecePainter(this.piece, this.color, this.colorMode);
 
   final PieceDefinition piece;
+  final Color color;
+  final PieceColorMode colorMode;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -59,15 +76,23 @@ class _NextPiecePainter extends CustomPainter {
         cell - 2,
         cell - 2,
       );
+      final cellColor = resolveCellColor(
+        mode: colorMode,
+        themedColor: color,
+        kind: c.kind,
+        tri: c.tri,
+      );
       if (c.kind == CellKind.full) {
-        paintFullCell(canvas, rect, piece.color);
+        paintFullCell(canvas, rect, cellColor);
       } else {
-        paintTriHalf(canvas, rect, c.tri!, piece.color);
+        paintTriHalf(canvas, rect, c.tri!, cellColor);
       }
     }
   }
 
   @override
   bool shouldRepaint(covariant _NextPiecePainter oldDelegate) =>
-      oldDelegate.piece != piece;
+      oldDelegate.piece != piece ||
+      oldDelegate.color != color ||
+      oldDelegate.colorMode != colorMode;
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/active_piece.dart';
 import '../models/board.dart';
 import '../models/piece.dart';
+import '../models/theme_palette.dart';
 import 'game_animations.dart';
 import 'tri_paint.dart';
 
@@ -17,6 +18,9 @@ class BoardPainter extends CustomPainter {
     required this.lockedCells,
     required this.clearingRows,
     required this.anim,
+    required this.theme,
+    required this.colorMode,
+    required this.activeThemeColor,
   }) : super(repaint: anim.repaint);
 
   final List<List<CellOccupancy>> board;
@@ -28,6 +32,16 @@ class BoardPainter extends CustomPainter {
   final List<PieceCell> lockedCells;
   final List<int> clearingRows;
   final GameAnimations anim;
+  final ThemePalette theme;
+  final PieceColorMode colorMode;
+
+  /// The falling piece's already-resolved color — pre-resolved by the caller
+  /// (rather than this painter calling `theme.colorFor(active.type.name)`
+  /// itself) because [PieceColorMode.random] needs a per-instance color the
+  /// painter has no way to know about. Unused when [active] is null. [ghost]
+  /// always shares [active]'s type (it's the same piece's drop preview), so
+  /// one color serves both.
+  final Color activeThemeColor;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -37,8 +51,8 @@ class BoardPainter extends CustomPainter {
     canvas.drawRect(
       Rect.fromLTWH(0, 0, size.width, size.height),
       Paint()
-        ..shader = const LinearGradient(
-          colors: [Color(0xFF0F131D), Color(0xFF0B0E14)],
+        ..shader = LinearGradient(
+          colors: [theme.backgroundTop, theme.backgroundBottom],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ).createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
@@ -78,6 +92,12 @@ class BoardPainter extends CustomPainter {
         final rect = rectFor(r.toDouble(), c.toDouble());
         if (cellData.full != null) {
           paintFullCell(canvas, rect, cellData.full!, glow: glow);
+        } else if (cellData.bl != null && cellData.tr != null) {
+          // Two triangle halves (from separate piece drops, possibly
+          // different colors — see Fusion Bonus, docs/GDD.md SS4.1) fused
+          // into a complete cell: gray it out rather than showing the two
+          // original piece colors, so a filled cell reads as "done".
+          paintFullCell(canvas, rect, duoFullColor, glow: glow);
         } else {
           if (cellData.bl != null) {
             paintTriHalf(canvas, rect, TriHalf.bl, cellData.bl!, glow: glow);
@@ -104,16 +124,16 @@ class BoardPainter extends CustomPainter {
     if (ghost != null && active != null && ghost!.row != active!.row) {
       for (final cellPos in ghost!.cellsOnBoard()) {
         final rect = rectFor(cellPos.row.toDouble(), cellPos.col.toDouble());
+        final ghostColor = resolveCellColor(
+          mode: colorMode,
+          themedColor: activeThemeColor,
+          kind: cellPos.kind,
+          tri: cellPos.tri,
+        );
         if (cellPos.kind == CellKind.full) {
-          paintFullCell(canvas, rect, ghost!.type.color, opacity: 0.18);
+          paintFullCell(canvas, rect, ghostColor, opacity: 0.18);
         } else {
-          paintTriHalf(
-            canvas,
-            rect,
-            cellPos.tri!,
-            ghost!.type.color,
-            opacity: 0.22,
-          );
+          paintTriHalf(canvas, rect, cellPos.tri!, ghostColor, opacity: 0.22);
         }
       }
     }
@@ -126,16 +146,16 @@ class BoardPainter extends CustomPainter {
           cellPos.row + animOffset.dy,
           cellPos.col + animOffset.dx,
         );
+        final activeColor = resolveCellColor(
+          mode: colorMode,
+          themedColor: activeThemeColor,
+          kind: cellPos.kind,
+          tri: cellPos.tri,
+        );
         if (cellPos.kind == CellKind.full) {
-          paintFullCell(canvas, rect, active!.type.color, glow: 0.15);
+          paintFullCell(canvas, rect, activeColor, glow: 0.15);
         } else {
-          paintTriHalf(
-            canvas,
-            rect,
-            cellPos.tri!,
-            active!.type.color,
-            glow: 0.15,
-          );
+          paintTriHalf(canvas, rect, cellPos.tri!, activeColor, glow: 0.15);
         }
       }
     }
@@ -150,6 +170,78 @@ class BoardPainter extends CustomPainter {
       );
     }
 
+    final ringOrigin = anim.impactRingOrigin;
+    if (ringOrigin != null && anim.impactRing.isAnimating) {
+      final t = anim.impactRing.value;
+      final ringCenter = Offset(
+        ringOrigin.dx * cell,
+        startY + ringOrigin.dy * cell,
+      );
+      canvas.drawCircle(
+        ringCenter,
+        cell * (0.3 + t * 1.6),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3 * (1 - t)
+          ..color = Colors.white.withValues(alpha: (1 - t) * 0.6),
+      );
+    }
+
+    if (anim.danger.value > 0 && state == GameState.playing) {
+      final pulse = anim.danger.value;
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 6 + pulse * 4
+          ..color = Colors.redAccent.withValues(alpha: 0.15 + pulse * 0.35),
+      );
+    }
+
+    // A soft blurred glow around the board while a combo streak is alive —
+    // the combo counterpart to the crisp danger border above, confined to
+    // the board rect and blurred so the two never read as the same signal.
+    if (anim.comboHeat > 0 && state == GameState.playing) {
+      final glowColor = Color.lerp(
+        theme.accent,
+        Colors.redAccent,
+        anim.comboHeat,
+      )!;
+      final pulse = 0.5 + 0.5 * anim.comboPulse.value;
+      canvas.drawRect(
+        Rect.fromLTWH(0, startY, config.cols * cell, config.rows * cell),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 4
+          ..color = glowColor.withValues(
+            alpha: (0.12 + 0.18 * pulse) * anim.comboHeat,
+          )
+          ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 8),
+      );
+    }
+
+    // A brief whole-board flash on level-up, layered on top of the existing
+    // "LEVEL n!" toast/SFX rather than replacing it.
+    if (anim.levelUp.isAnimating) {
+      final t = anim.levelUp.value;
+      final envelope = t < 0.3 ? t / 0.3 : 1 - (t - 0.3) / 0.7;
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        Paint()..color = theme.accent.withValues(alpha: envelope * 0.22),
+      );
+    }
+
+    // A slower, warmer flash for a new personal best — plays alongside the
+    // particle shower the game screen starts at the same moment.
+    if (anim.celebration.isAnimating) {
+      final t = anim.celebration.value;
+      final envelope = t < 0.25 ? t / 0.25 : 1 - (t - 0.25) / 0.75;
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        Paint()..color = Colors.amberAccent.withValues(alpha: envelope * 0.28),
+      );
+    }
+
     canvas.drawRect(
       Rect.fromLTWH(0, startY, config.cols * cell, config.rows * cell),
       Paint()
@@ -159,38 +251,41 @@ class BoardPainter extends CustomPainter {
     );
 
     if (state == GameState.paused || state == GameState.over) {
+      // Paused gets a dim backdrop for the PauseMenu widget overlay on top
+      // of this canvas (its own title/buttons, not drawn here). Game Over
+      // still gets its own label — ResultsScreen shows a moment later, but
+      // there's a frame or two where only this canvas has painted.
       final overlay = Paint()
         ..color = Colors.black.withValues(
           alpha: state == GameState.over ? 0.55 : 0.35,
         );
       canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), overlay);
-      final glowColor = state == GameState.over
-          ? const Color(0xFFFF6E6E)
-          : const Color(0xFF66E0F4);
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: state == GameState.over ? 'Game Over' : 'Paused',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 28,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-            shadows: [
-              Shadow(color: glowColor.withValues(alpha: 0.9), blurRadius: 8),
-              Shadow(color: glowColor.withValues(alpha: 0.6), blurRadius: 20),
-              const Shadow(color: Colors.black, blurRadius: 4),
-            ],
+      if (state == GameState.over) {
+        final textPainter = TextPainter(
+          text: const TextSpan(
+            text: 'Game Over',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+              shadows: [
+                Shadow(color: Color(0xE6FF6E6E), blurRadius: 8),
+                Shadow(color: Color(0x99FF6E6E), blurRadius: 20),
+                Shadow(color: Colors.black, blurRadius: 4),
+              ],
+            ),
           ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout(maxWidth: size.width);
-      textPainter.paint(
-        canvas,
-        Offset(
-          (size.width - textPainter.width) / 2,
-          (size.height - textPainter.height) / 2,
-        ),
-      );
+          textDirection: TextDirection.ltr,
+        )..layout(maxWidth: size.width);
+        textPainter.paint(
+          canvas,
+          Offset(
+            (size.width - textPainter.width) / 2,
+            (size.height - textPainter.height) / 2,
+          ),
+        );
+      }
     }
   }
 
@@ -210,6 +305,9 @@ class BoardPainter extends CustomPainter {
         oldDelegate.ghost != ghost ||
         oldDelegate.state != state ||
         oldDelegate.lockedCells != lockedCells ||
-        oldDelegate.clearingRows != clearingRows;
+        oldDelegate.clearingRows != clearingRows ||
+        oldDelegate.theme != theme ||
+        oldDelegate.colorMode != colorMode ||
+        oldDelegate.activeThemeColor != activeThemeColor;
   }
 }

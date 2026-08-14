@@ -20,6 +20,14 @@ List<PieceCell> _triangulate(
 class Pieces {
   const Pieces._();
 
+  /// A named subset of [all], preserving [all]'s order — used by modes with
+  /// a reduced piece pool (e.g. Chill mode drops the two hardest-to-read
+  /// shapes for new players, see docs/GDD.md SS5).
+  static List<PieceDefinition> byNames(List<String> names) {
+    final wanted = names.toSet();
+    return all.where((p) => wanted.contains(p.name)).toList();
+  }
+
   static final List<PieceDefinition> all = [
     PieceDefinition(
       name: 'I4',
