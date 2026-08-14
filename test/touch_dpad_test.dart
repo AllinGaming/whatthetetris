@@ -40,29 +40,20 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(buildPad(TouchHandedness.balanced));
-    expect(
-      xOf(tester, 'Move left'),
-      lessThan(xOf(tester, 'Hard drop')),
-    );
+    expect(xOf(tester, 'Move left'), lessThan(xOf(tester, 'Hard drop')));
   });
 
   testWidgets('left-handed keeps the move track on the left', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(buildPad(TouchHandedness.left));
-    expect(
-      xOf(tester, 'Move left'),
-      lessThan(xOf(tester, 'Hard drop')),
-    );
+    expect(xOf(tester, 'Move left'), lessThan(xOf(tester, 'Hard drop')));
   });
 
   testWidgets('right-handed swaps the move track to the right', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(buildPad(TouchHandedness.right));
-    expect(
-      xOf(tester, 'Move left'),
-      greaterThan(xOf(tester, 'Hard drop')),
-    );
+    expect(xOf(tester, 'Move left'), greaterThan(xOf(tester, 'Hard drop')));
   });
 }
