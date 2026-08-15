@@ -712,43 +712,41 @@ void main() {
     },
   );
 
-  testWidgets(
-    'a freshly spawned piece keeps the last mirrored orientation',
-    (WidgetTester tester) async {
-      await _pumpGameScreenDirect(tester, GameMode.classic, settle: false);
+  testWidgets('a freshly spawned piece keeps the last mirrored orientation', (
+    WidgetTester tester,
+  ) async {
+    await _pumpGameScreenDirect(tester, GameMode.classic, settle: false);
 
-      BoardPainter painter() =>
-          tester
-                  .widget<CustomPaint>(
-                    find.byWidgetPredicate(
-                      (widget) =>
-                          widget is CustomPaint &&
-                          widget.painter is BoardPainter,
-                    ),
-                  )
-                  .painter
-              as BoardPainter;
+    BoardPainter painter() =>
+        tester
+                .widget<CustomPaint>(
+                  find.byWidgetPredicate(
+                    (widget) =>
+                        widget is CustomPaint && widget.painter is BoardPainter,
+                  ),
+                )
+                .painter
+            as BoardPainter;
 
-      expect(painter().active!.mirrored, isFalse);
+    expect(painter().active!.mirrored, isFalse);
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
-      await tester.pump();
-      expect(painter().active!.mirrored, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+    await tester.pump();
+    expect(painter().active!.mirrored, isTrue);
 
-      // Hard drop locks the mirrored piece and spawns the next one.
-      await tester.sendKeyEvent(LogicalKeyboardKey.space);
-      await tester.pump();
-      await tester.pump();
+    // Hard drop locks the mirrored piece and spawns the next one.
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    await tester.pump();
 
-      expect(
-        painter().active!.mirrored,
-        isTrue,
-        reason:
-            'a new piece should start in whatever orientation the last one '
-            'locked in, not always reset to unmirrored.',
-      );
-    },
-  );
+    expect(
+      painter().active!.mirrored,
+      isTrue,
+      reason:
+          'a new piece should start in whatever orientation the last one '
+          'locked in, not always reset to unmirrored.',
+    );
+  });
 
   testWidgets(
     'the board actually renders at a real size, not collapsed to zero',

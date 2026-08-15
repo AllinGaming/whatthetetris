@@ -93,9 +93,7 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Finish'), findsOneWidget);
   });
 
-  testWidgets('Skip exits the level immediately from any step', (
-    tester,
-  ) async {
+  testWidgets('Skip exits the level immediately from any step', (tester) async {
     await _pumpPushed(tester);
 
     await tester.tap(find.text('Skip'));

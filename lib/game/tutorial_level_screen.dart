@@ -298,9 +298,10 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
   String get _instruction {
     if (_successMessage != null) return _successMessage!;
     return switch (_step) {
-      _Step.moveRotateDrop => _readyToDrop
-          ? 'Now press Space to drop it.'
-          : 'Move it (← / →) and rotate it (↑ or Q).',
+      _Step.moveRotateDrop =>
+        _readyToDrop
+            ? 'Now press Space to drop it.'
+            : 'Move it (← / →) and rotate it (↑ or Q).',
       _Step.mirror =>
         "This piece won't fuse as-is — press M to mirror it, then Space to drop it.",
       _Step.fusion =>
