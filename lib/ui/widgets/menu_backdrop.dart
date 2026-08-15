@@ -6,6 +6,7 @@ import '../../game/tri_paint.dart';
 import '../../models/piece.dart';
 import '../../models/pieces.dart';
 import '../../models/theme_palette.dart';
+import 'app_route_observer.dart';
 
 /// Full-bleed decorative background for menu-style screens (start screen,
 /// and anywhere else that wants the same identity): the board's own
@@ -33,13 +34,17 @@ class MenuBackdrop extends StatefulWidget {
 }
 
 class _MenuBackdropState extends State<MenuBackdrop>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, RouteAware {
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(seconds: 30),
   );
   late final List<_DriftingPiece> _pieces = _buildPieces();
   bool _started = false;
+  PageRoute<dynamic>? _subscribedRoute;
+
+  bool get _skipMotion =>
+      widget.reduceMotion || MediaQuery.of(context).disableAnimations;
 
   static List<_DriftingPiece> _buildPieces() {
     // Fixed seed: a stable, non-jittery layout across rebuilds, rather than
@@ -60,19 +65,40 @@ class _MenuBackdropState extends State<MenuBackdrop>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_started) return;
-    _started = true;
-    if (widget.reduceMotion || MediaQuery.of(context).disableAnimations) {
-      _controller.value = 0;
-    } else {
-      _controller.repeat();
+    if (!_started) {
+      _started = true;
+      if (_skipMotion) {
+        _controller.value = 0;
+      } else {
+        _controller.repeat();
+      }
+    }
+    final route = ModalRoute.of(context);
+    if (route is PageRoute && route != _subscribedRoute) {
+      if (_subscribedRoute != null) appRouteObserver.unsubscribe(this);
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
     }
   }
 
   @override
   void dispose() {
+    appRouteObserver.unsubscribe(this);
     _controller.dispose();
     super.dispose();
+  }
+
+  // RouteAware — this backdrop lives on whichever screen embeds it, so it
+  // must stop ticking the instant another route is pushed on top (it's
+  // fully obscured but the Ticker keeps firing regardless of paint
+  // occlusion) and only resume once that route is popped and this one is
+  // visible again.
+  @override
+  void didPushNext() => _controller.stop();
+
+  @override
+  void didPopNext() {
+    if (!_skipMotion) _controller.repeat();
   }
 
   @override

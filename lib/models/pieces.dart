@@ -7,7 +7,9 @@ List<PieceCell> _triangulate(
   TriHalf tri = TriHalf.bl,
 }) {
   // Convert each square coordinate to a single triangle (uniform diagonal)
-  // so an entire piece shares one orientation and flips together on rotate.
+  // so an entire piece shares one orientation -- stable across ordinary
+  // rotation; only an explicit Mirror flips it (see PieceDefinition._rotateCW
+  // and ActivePiece.cellsOnBoard).
   return squares
       .map(
         (sq) =>

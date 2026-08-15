@@ -98,10 +98,18 @@ class CloudAuthService extends ChangeNotifier {
     }
   }
 
-  /// Restores progress on a new/reinstalled device: signs in with the
-  /// provider credential (not link — this device's throwaway anonymous
-  /// session is discarded in favor of the account that credential already
-  /// belongs to).
+  /// Signs in with the provider credential (not link — this device's
+  /// throwaway anonymous session is discarded in favor of the account that
+  /// credential already belongs to), as the first step of restoring
+  /// progress on a new/reinstalled device.
+  ///
+  /// This alone does NOT pull saved progress back down: [CloudBackupService]
+  /// currently only ever pushes local saves up (see its own doc comment) —
+  /// there is no corresponding read-and-merge-into-`SharedPreferences` path
+  /// yet, and nothing in the UI calls this method today. Wire up an actual
+  /// pull/merge step here before surfacing a "restore" affordance to
+  /// players, or this will silently sign them into the right account while
+  /// leaving all their local scores/stats at zero.
   Future<bool> restoreWithGoogle() async {
     if (!isFirebaseConfigured) return false;
     try {

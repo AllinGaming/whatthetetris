@@ -11,6 +11,7 @@ class NextPiecePreview extends StatelessWidget {
     this.size = 64,
     this.semanticLabel = 'Next piece',
     this.colorOverride,
+    this.mirrored = false,
   });
 
   final PieceDefinition piece;
@@ -18,9 +19,14 @@ class NextPiecePreview extends StatelessWidget {
   final double size;
   final String semanticLabel;
 
+  /// Matches [ActivePiece.cellsOnBoard]'s mirror flip, so a queued piece
+  /// that will actually spawn mirrored previews in the color it'll really
+  /// drop in, not the shape's default orientation.
+  final bool mirrored;
+
   /// The active theme's color for this piece (docs/GDD.md SS6.5). Falls
   /// back to the piece catalog's default color when omitted. Only used as
-  /// the resolved color under [PieceColorMode.colored] — see
+  /// the resolved color outside [PieceColorMode.duo] — see
   /// [resolveCellColor].
   final Color? colorOverride;
 
@@ -44,6 +50,7 @@ class NextPiecePreview extends StatelessWidget {
               piece,
               colorOverride ?? piece.color,
               colorMode,
+              mirrored,
             ),
           ),
         ),
@@ -53,11 +60,12 @@ class NextPiecePreview extends StatelessWidget {
 }
 
 class _NextPiecePainter extends CustomPainter {
-  _NextPiecePainter(this.piece, this.color, this.colorMode);
+  _NextPiecePainter(this.piece, this.color, this.colorMode, this.mirrored);
 
   final PieceDefinition piece;
   final Color color;
   final PieceColorMode colorMode;
+  final bool mirrored;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -76,16 +84,17 @@ class _NextPiecePainter extends CustomPainter {
         cell - 2,
         cell - 2,
       );
+      final tri = mirrored ? c.tri?.rotateCW() : c.tri;
       final cellColor = resolveCellColor(
         mode: colorMode,
         themedColor: color,
         kind: c.kind,
-        tri: c.tri,
+        tri: tri,
       );
       if (c.kind == CellKind.full) {
         paintFullCell(canvas, rect, cellColor);
       } else {
-        paintTriHalf(canvas, rect, c.tri!, cellColor);
+        paintTriHalf(canvas, rect, tri!, cellColor);
       }
     }
   }
@@ -94,5 +103,6 @@ class _NextPiecePainter extends CustomPainter {
   bool shouldRepaint(covariant _NextPiecePainter oldDelegate) =>
       oldDelegate.piece != piece ||
       oldDelegate.color != color ||
-      oldDelegate.colorMode != colorMode;
+      oldDelegate.colorMode != colorMode ||
+      oldDelegate.mirrored != mirrored;
 }

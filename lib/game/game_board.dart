@@ -84,7 +84,7 @@ class GameBoard {
 
   /// [colorForFill] resolves the color for the half being newly filled,
   /// given its orientation and the color already on the other half — under
-  /// [PieceColorMode.colored] that's just the existing color passed through,
+  /// [PieceColorMode.random] that's just the existing color passed through,
   /// but under [PieceColorMode.duo] it must return the fixed color for that
   /// orientation instead of copying (copying would put bl's red into a tr
   /// slot, which should always read as blue).

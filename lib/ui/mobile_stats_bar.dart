@@ -18,6 +18,7 @@ class MobileStatsBar extends StatelessWidget {
     required this.level,
     required this.upcoming,
     required this.upcomingColor,
+    required this.nextMirrored,
     required this.theme,
     required this.colorMode,
     required this.anim,
@@ -33,6 +34,10 @@ class MobileStatsBar extends StatelessWidget {
   final int level;
   final List<PieceDefinition> upcoming;
   final Color? upcomingColor;
+
+  /// The orientation a freshly spawned piece will start in (see
+  /// `GameScreen._lastMirrored`) -- matches [GameSidePanel]'s own preview.
+  final bool nextMirrored;
   final ThemePalette theme;
   final PieceColorMode colorMode;
 
@@ -111,6 +116,7 @@ class MobileStatsBar extends StatelessWidget {
                 size: 52,
                 colorMode: colorMode,
                 colorOverride: upcomingColor,
+                mirrored: nextMirrored,
               ),
             const SizedBox(width: 4),
             IconButton(

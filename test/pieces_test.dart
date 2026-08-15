@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:whatthetetris/models/piece.dart';
 import 'package:whatthetetris/models/pieces.dart';
 
 void main() {
@@ -34,4 +35,24 @@ void main() {
       }
     }
   });
+
+  test(
+    'rotating never changes a piece\'s triangle orientation -- only Mirror does',
+    () {
+      for (final piece in Pieces.all) {
+        for (final rotation in piece.rotations) {
+          for (final cell in rotation) {
+            expect(
+              cell.tri,
+              TriHalf.bl,
+              reason:
+                  '${piece.name} should stay uniformly bl across every '
+                  'rotation state; rotation must never flip triangle '
+                  'orientation on its own.',
+            );
+          }
+        }
+      }
+    },
+  );
 }

@@ -11,27 +11,12 @@ void main() {
     expect(Sfx.values, contains(Sfx.achievementUnlock));
   });
 
-  test('Arcade gets its own energetic music track', () {
-    expect(MusicTrack.forMode(GameMode.arcade), MusicTrack.arcade);
-    expect(MusicTrack.arcade.asset, 'music_arcade_loop.wav');
-  });
-
-  test('Zen and Chill share the calm ambient track', () {
-    expect(MusicTrack.forMode(GameMode.zen), MusicTrack.zen);
-    expect(MusicTrack.forMode(GameMode.chill), MusicTrack.zen);
-  });
-
-  test('every other mode still gets the marathon track', () {
-    for (final mode in [
-      GameMode.classic,
-      GameMode.sprint,
-      GameMode.ultra,
-      GameMode.daily,
-    ]) {
+  test('every mode shares Chill/Zen\'s calm ambient track', () {
+    for (final mode in GameMode.values) {
       expect(
         MusicTrack.forMode(mode),
-        MusicTrack.marathon,
-        reason: 'expected marathon for $mode',
+        MusicTrack.zen,
+        reason: 'expected zen for $mode',
       );
     }
   });

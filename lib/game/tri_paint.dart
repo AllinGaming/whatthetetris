@@ -24,6 +24,19 @@ Path triHalfPath(Rect rect, TriHalf tri) {
   return path..close();
 }
 
+// Reused across calls instead of allocating fresh Paint objects per triangle
+// — this runs for every board cell on every animation frame (the falling
+// piece alone keeps the board repainting continuously), so per-call
+// allocation here was a real, constant GC/CPU cost during ordinary
+// gameplay. Safe to share: each is fully reconfigured immediately before
+// its single, synchronous `drawPath` call, and painting is single-threaded
+// with no re-entrant/nested use of these functions.
+final _glowPaint = Paint()..style = PaintingStyle.stroke;
+final _fillPaint = Paint();
+final _outlinePaint = Paint()
+  ..style = PaintingStyle.stroke
+  ..strokeWidth = 1;
+
 /// Paints one triangle half. [glow] (0..1) brightens it toward white and
 /// adds a colored neon halo behind it — used for the active piece's
 /// permanent low glow and the brighter lock-flash/line-clear pulses.
@@ -41,8 +54,7 @@ void paintTriHalf(
   if (glow > 0) {
     canvas.drawPath(
       path,
-      Paint()
-        ..style = PaintingStyle.stroke
+      _glowPaint
         ..strokeWidth = 2 + glow * 5
         ..color = color.withValues(alpha: 0.45 * glow * opacity)
         ..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 + glow * 9),
@@ -51,7 +63,7 @@ void paintTriHalf(
 
   canvas.drawPath(
     path,
-    Paint()
+    _fillPaint
       ..shader = LinearGradient(
         colors: [
           lit.withValues(alpha: 0.95 * opacity),
@@ -63,10 +75,8 @@ void paintTriHalf(
   );
   canvas.drawPath(
     path,
-    Paint()
-      ..style = PaintingStyle.stroke
-      ..color = Colors.white.withValues(alpha: (0.18 + glow * 0.4) * opacity)
-      ..strokeWidth = 1,
+    _outlinePaint
+      ..color = Colors.white.withValues(alpha: (0.18 + glow * 0.4) * opacity),
   );
 }
 

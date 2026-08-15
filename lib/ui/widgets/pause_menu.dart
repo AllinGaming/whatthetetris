@@ -54,7 +54,10 @@ class PauseMenu extends StatelessWidget {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Quit to menu?'),
-        content: const Text('Your current progress on this run will be lost.'),
+        content: const Text(
+          'This ends the run — your score and stats so far will be saved, '
+          'same as a normal game over.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),

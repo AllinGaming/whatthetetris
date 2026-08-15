@@ -27,6 +27,7 @@ class GameSidePanel extends StatelessWidget {
     required this.speedBoost,
     required this.upcoming,
     required this.upcomingColors,
+    required this.nextMirrored,
     required this.held,
     required this.heldColor,
     required this.theme,
@@ -64,6 +65,12 @@ class GameSidePanel extends StatelessWidget {
   final int speedBoost;
   final List<PieceDefinition> upcoming;
   final List<Color> upcomingColors;
+
+  /// The orientation a freshly spawned piece will start in (see
+  /// `GameScreen._lastMirrored`) -- previewed on the queued pieces below so
+  /// their shown color matches what they'll actually drop as, not always
+  /// the shape's unmirrored default.
+  final bool nextMirrored;
   final PieceDefinition? held;
   final Color? heldColor;
   final ThemePalette theme;
@@ -93,29 +100,38 @@ class GameSidePanel extends StatelessWidget {
     String label,
     VoidCallback? onHold,
   ) {
-    final child = Tooltip(
+    final visual = Tooltip(
       message: label,
-      child: Semantics(
-        button: true,
-        enabled: onHold != null,
-        label: label,
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Icon(
-            icon,
-            size: 20,
-            color: onHold == null ? Colors.white38 : null,
-          ),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Icon(
+          icon,
+          size: 20,
+          color: onHold == null ? Colors.white38 : null,
         ),
       ),
     );
-    return onHold == null
-        ? child
-        : HoldRepeatButton(onHold: onHold, semanticLabel: label, child: child);
+    // HoldRepeatButton already wraps its child in its own button Semantics
+    // (label + onTap) -- adding another one here too would give screen
+    // readers two overlapping "button, $label" nodes for the one control.
+    // Only the disabled path (no HoldRepeatButton) needs its own.
+    if (onHold == null) {
+      return Semantics(
+        button: true,
+        enabled: false,
+        label: label,
+        child: visual,
+      );
+    }
+    return HoldRepeatButton(
+      onHold: onHold,
+      semanticLabel: label,
+      child: visual,
+    );
   }
 
   @override
@@ -214,6 +230,7 @@ class GameSidePanel extends StatelessWidget {
                     size: 44,
                     colorMode: colorMode,
                     colorOverride: upcomingColors[i],
+                    mirrored: nextMirrored,
                   ),
                 ],
                 const Spacer(),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../game/tri_paint.dart';
 import '../../models/piece.dart';
+import 'app_route_observer.dart';
 
 /// A small looping animation above the start screen title that acts out the
 /// game's core, otherwise-unexplained hook — two opposite triangle halves
@@ -40,12 +41,13 @@ class FusionHero extends StatefulWidget {
 }
 
 class _FusionHeroState extends State<FusionHero>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, RouteAware {
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 3200),
   );
   bool _started = false;
+  PageRoute<dynamic>? _subscribedRoute;
 
   bool get _skipMotion =>
       widget.reduceMotion || MediaQuery.of(context).disableAnimations;
@@ -55,15 +57,36 @@ class _FusionHeroState extends State<FusionHero>
     super.didChangeDependencies();
     // Deferred to here (rather than initState) because it needs MediaQuery,
     // and guarded by _started since didChangeDependencies can re-fire.
-    if (_started) return;
-    _started = true;
-    if (_skipMotion) {
-      _controller.value = 0.7; // a static resting "fused" frame
-    } else if (widget.interactive) {
-      _controller.value = 0; // waits for a tap instead of auto-playing
-    } else {
-      _controller.repeat();
+    if (!_started) {
+      _started = true;
+      if (_skipMotion) {
+        _controller.value = 0.7; // a static resting "fused" frame
+      } else if (widget.interactive) {
+        _controller.value = 0; // waits for a tap instead of auto-playing
+      } else {
+        _controller.repeat();
+      }
     }
+    // Only the ambient (non-interactive) start-screen hero loops forever on
+    // its own — pause/resume it with its route so it doesn't keep ticking
+    // (and burning CPU/battery) once buried under a pushed game/settings
+    // screen. The interactive tutorial instance never auto-repeats, so it
+    // has nothing to pause.
+    if (widget.interactive) return;
+    final route = ModalRoute.of(context);
+    if (route is PageRoute && route != _subscribedRoute) {
+      if (_subscribedRoute != null) appRouteObserver.unsubscribe(this);
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPushNext() => _controller.stop();
+
+  @override
+  void didPopNext() {
+    if (!_skipMotion) _controller.repeat();
   }
 
   void _replay() {
@@ -78,6 +101,7 @@ class _FusionHeroState extends State<FusionHero>
 
   @override
   void dispose() {
+    if (_subscribedRoute != null) appRouteObserver.unsubscribe(this);
     _controller.dispose();
     super.dispose();
   }

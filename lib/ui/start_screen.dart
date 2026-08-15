@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../game/game_screen.dart';
+import '../game/tutorial_level_screen.dart';
 import '../models/game_mode.dart';
 import '../models/piece.dart';
 import '../models/pieces.dart';
@@ -76,18 +78,59 @@ class StartScreen extends StatelessWidget {
   final DailyChallengeService dailyChallenge;
   final LiveServices live;
 
-  void _showTutorial(BuildContext context) {
-    showDialog<void>(
+  Future<void> _showTutorial(BuildContext context) async {
+    var finishedAll = false;
+    await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => TutorialOverlay(
         reduceMotion: settings.reduceMotion,
         onDone: () {
-          unawaited(settings.setHasSeenTutorial(true));
+          finishedAll = true;
           Navigator.of(dialogContext).pop();
         },
+        onSkip: () => Navigator.of(dialogContext).pop(),
       ),
     );
+    unawaited(settings.setHasSeenTutorial(true));
+    // Only players who actually finish the walkthrough (not Skip) go on to
+    // the hands-on level.
+    if (finishedAll && context.mounted) {
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const TutorialLevelScreen()));
+    }
+  }
+
+  /// Random strips out the only signal Duo gives for free (which triangle
+  /// half a cell still needs), so switching to it is a real difficulty
+  /// jump, not just a cosmetic pick — worth a confirm rather than a
+  /// one-tap accident.
+  Future<void> _confirmRandomColorMode(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Switch to Random colors?'),
+        content: const Text(
+          "This makes the game visually much harder to play — color won't "
+          'tell you anything about a piece\'s shape or which triangle half '
+          'it needs anymore.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Switch'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await settings.setPieceColorMode(PieceColorMode.random);
+    }
   }
 
   @override
@@ -108,7 +151,16 @@ class StartScreen extends StatelessWidget {
               child: Center(
                 child: SingleChildScrollView(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 560),
+                    constraints: BoxConstraints(
+                      // Fills wide (desktop/web) viewports instead of
+                      // sitting as a narrow column with dead space on
+                      // either side, while staying phone-shaped on small
+                      // screens.
+                      maxWidth: math.min(
+                        MediaQuery.sizeOf(context).width * 0.92,
+                        900,
+                      ),
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
                       child: Column(
@@ -208,6 +260,7 @@ class StartScreen extends StatelessWidget {
                             children: [
                               _ColorModeChip(
                                 label: 'Duo',
+                                badge: 'Recommended',
                                 color: accent,
                                 selected:
                                     settings.pieceColorMode ==
@@ -219,28 +272,12 @@ class StartScreen extends StatelessWidget {
                                 ),
                               ),
                               _ColorModeChip(
-                                label: 'Funky',
-                                color: const Color(0xFFFFD54F),
-                                selected:
-                                    settings.pieceColorMode ==
-                                    PieceColorMode.colored,
-                                onTap: () => unawaited(
-                                  settings.setPieceColorMode(
-                                    PieceColorMode.colored,
-                                  ),
-                                ),
-                              ),
-                              _ColorModeChip(
                                 label: 'Random',
                                 color: Colors.pinkAccent,
                                 selected:
                                     settings.pieceColorMode ==
                                     PieceColorMode.random,
-                                onTap: () => unawaited(
-                                  settings.setPieceColorMode(
-                                    PieceColorMode.random,
-                                  ),
-                                ),
+                                onTap: () => _confirmRandomColorMode(context),
                               ),
                             ],
                           ),
@@ -383,6 +420,7 @@ class _ColorModeChip extends StatelessWidget {
     required this.color,
     required this.selected,
     required this.onTap,
+    this.badge,
   });
 
   final String label;
@@ -390,12 +428,18 @@ class _ColorModeChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  /// A short tag rendered after the label (e.g. "Recommended") -- optional,
+  /// for calling out the easiest/default choice among otherwise-equal pills.
+  final String? badge;
+
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
       selected: selected,
-      label: '$label piece colors',
+      label: badge == null
+          ? '$label piece colors'
+          : '$label piece colors, $badge',
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
@@ -429,6 +473,28 @@ class _ColorModeChip extends StatelessWidget {
                   fontSize: 13,
                 ),
               ),
+              if (badge != null) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.22),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    badge!.toUpperCase(),
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ),
+              ],
               if (selected) ...[
                 const SizedBox(width: 5),
                 Icon(Icons.check, size: 14, color: color),
@@ -565,7 +631,11 @@ class _ModeCard extends StatelessWidget {
                             piece: accentPiece,
                             size: 44,
                             semanticLabel: '${cfg.label} piece',
-                            colorMode: PieceColorMode.colored,
+                            // Any non-duo mode renders colorOverride
+                            // uniformly -- this card swatch always wants a
+                            // single solid color regardless of the
+                            // player's actual piece-color-mode setting.
+                            colorMode: PieceColorMode.random,
                             colorOverride: accent,
                           ),
                           const SizedBox(width: 14),

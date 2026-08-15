@@ -12,18 +12,14 @@ extension TriHalfRotation on TriHalf {
 enum CellKind { full, tri }
 
 /// How locked/falling piece cells are colored (docs/GDD.md SS6.5). [duo] is
-/// the default, easier mode: color signals triangle orientation only (see
+/// the recommended default: color signals triangle orientation only (see
 /// [resolveCellColor]) rather than piece identity, so a player can tell at a
-/// glance which half a cell still needs, regardless of which piece dropped
-/// it. [colored] restores the classic per-piece-type theme palette, which
-/// hides that signal behind seven colors and is harder to read at speed.
-/// [random] goes further: each piece gets a fresh, shape-independent color
-/// on spawn, so color carries *no* information at all — not even the
-/// learnable "this shape is always this color" of [colored] — forcing the
-/// player to read shape alone.
+/// glance which half a cell still needs. [random] goes the opposite way:
+/// each piece gets a fresh, shape-independent color on spawn, so color
+/// carries *no* information at all, forcing the player to read shape alone
+/// — noticeably harder to play, which is why picking it prompts a confirm.
 enum PieceColorMode {
   duo,
-  colored,
   random;
 
   static PieceColorMode fromName(String? name) => values.firstWhere(
@@ -37,11 +33,11 @@ const duoTrColor = Color(0xFF5C9CFF);
 const duoFullColor = Color(0xFF9E9E9E);
 
 /// Resolves the paint color for a single cell under [mode]. [themedColor] is
-/// what the cell renders as in [PieceColorMode.colored]/[PieceColorMode.random]
-/// (the piece's theme color, or its per-instance random color respectively —
-/// the caller resolves which one applies before calling this); ignored
-/// entirely in [PieceColorMode.duo], where color is derived purely from
-/// [kind]/[tri] instead.
+/// what the cell renders as in [PieceColorMode.random] (its per-instance
+/// random color -- the caller resolves it before calling this), or whatever
+/// fixed/override color a caller wants rendered uniformly regardless of
+/// [mode]; ignored entirely in [PieceColorMode.duo], where color is derived
+/// purely from [kind]/[tri] instead.
 Color resolveCellColor({
   required PieceColorMode mode,
   required Color themedColor,
@@ -88,15 +84,15 @@ class PieceDefinition {
     return rotations;
   }
 
+  /// Purely a coordinate transform -- [PieceCell.tri] is carried through
+  /// unchanged. A piece's triangle orientation ("uniform diagonal", docs/
+  /// GDD.md SS3) is otherwise stable across rotation; only the explicit
+  /// Mirror action (see [ActivePiece.cellsOnBoard]) is meant to flip it, so
+  /// a player always knows why a half just changed color.
   static PieceCell _rotateCW(PieceCell cell) {
     final newRow = cell.col;
     final newCol = -cell.row;
-    return PieceCell(
-      row: newRow,
-      col: newCol,
-      kind: cell.kind,
-      tri: cell.tri?.rotateCW(),
-    );
+    return PieceCell(row: newRow, col: newCol, kind: cell.kind, tri: cell.tri);
   }
 
   static List<PieceCell> _normalize(List<PieceCell> cells) {

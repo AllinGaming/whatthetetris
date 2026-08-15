@@ -6,6 +6,7 @@
 // tree, read text, and verify that the values of widget properties are correct.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -193,7 +194,8 @@ void main() {
   });
 
   testWidgets(
-    'the mode-select screen lets you pick a piece-color mode directly',
+    'the mode-select screen lets you pick Duo directly, but Random needs '
+    'confirmation first',
     (WidgetTester tester) async {
       _disableTestAnimations(tester);
       SharedPreferences.setMockInitialValues(_tutorialAlreadySeen);
@@ -222,11 +224,38 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('Funky'), findsOneWidget);
-      await tester.tap(find.text('Funky'));
-      await tester.pump();
+      // Funky is gone -- only Duo (marked Recommended) and Random remain.
+      expect(find.text('Funky'), findsNothing);
+      expect(find.text('RECOMMENDED'), findsOneWidget);
 
-      expect(settings.pieceColorMode, PieceColorMode.colored);
+      await tester.tap(find.text('Random'));
+      await tester.pumpAndSettle();
+
+      // Random is a real difficulty jump -- it shouldn't apply until
+      // confirmed.
+      expect(find.text('Switch to Random colors?'), findsOneWidget);
+      expect(settings.pieceColorMode, PieceColorMode.duo);
+
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Cancel'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(settings.pieceColorMode, PieceColorMode.duo);
+
+      await tester.tap(find.text('Random'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Switch'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(settings.pieceColorMode, PieceColorMode.random);
     },
   );
 
@@ -673,7 +702,51 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // Quitting ends the run like a normal game over -- score/stats get
+      // saved and the same Results screen shows, with its own way back.
+      expect(find.text('Menu'), findsOneWidget);
+      await tester.tap(find.text('Menu'));
+      await tester.pumpAndSettle();
+
       expect(find.text('What The Tetris'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'a freshly spawned piece keeps the last mirrored orientation',
+    (WidgetTester tester) async {
+      await _pumpGameScreenDirect(tester, GameMode.classic, settle: false);
+
+      BoardPainter painter() =>
+          tester
+                  .widget<CustomPaint>(
+                    find.byWidgetPredicate(
+                      (widget) =>
+                          widget is CustomPaint &&
+                          widget.painter is BoardPainter,
+                    ),
+                  )
+                  .painter
+              as BoardPainter;
+
+      expect(painter().active!.mirrored, isFalse);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+      await tester.pump();
+      expect(painter().active!.mirrored, isTrue);
+
+      // Hard drop locks the mirrored piece and spawns the next one.
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        painter().active!.mirrored,
+        isTrue,
+        reason:
+            'a new piece should start in whatever orientation the last one '
+            'locked in, not always reset to unmirrored.',
+      );
     },
   );
 

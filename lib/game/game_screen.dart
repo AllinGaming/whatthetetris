@@ -31,6 +31,7 @@ import 'game_animations.dart';
 import 'game_board.dart';
 import 'piece_bag.dart';
 import 'replay.dart';
+import 'tutorial_level_screen.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({
@@ -117,6 +118,13 @@ class _GameScreenState extends State<GameScreen>
   bool _holdUsed = false;
   bool _resolvingLock = false;
 
+  /// The mirrored state the last piece actually settled into (kept in sync
+  /// on every successful Mirror toggle, see [_mirrorActive]) -- each newly
+  /// spawned piece starts in this same orientation instead of always
+  /// resetting to unmirrored, so a run of same-colored triangles doesn't
+  /// require re-mirroring every single piece.
+  bool _lastMirrored = false;
+
   /// True once [EndCondition.boardCleared] has fired — distinguishes a
   /// Daily Challenge win from the ordinary top-out loss that [_endGame]
   /// otherwise represents, for the results screen and [DailyChallengeService].
@@ -143,7 +151,12 @@ class _GameScreenState extends State<GameScreen>
   bool get _canAcceptInput =>
       _state == GameState.playing &&
       !_resolvingLock &&
-      !_showingCountdown &&
+      // Input unblocks the instant the countdown hits "GO!" (countdownValue
+      // 0) rather than waiting out that whole displayed second too --
+      // gravity/the clock still don't start until _beginRun fires a beat
+      // later, but there's no reason to make the player wait through a
+      // second full second of a dead control scheme after being told "GO!".
+      !(_showingCountdown && _countdownValue > 0) &&
       _active != null;
   bool get _canSpeedUp =>
       cfg.hasManualSpeedBoost &&
@@ -188,15 +201,28 @@ class _GameScreenState extends State<GameScreen>
   Future<void> _showTutorial() async {
     if (!mounted) return;
     _setPaused(true);
+    var finishedAll = false;
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => TutorialOverlay(
         reduceMotion: widget.settings.reduceMotion,
-        onDone: () => Navigator.of(dialogContext).pop(),
+        onDone: () {
+          finishedAll = true;
+          Navigator.of(dialogContext).pop();
+        },
+        onSkip: () => Navigator.of(dialogContext).pop(),
       ),
     );
     unawaited(widget.settings.setHasSeenTutorial(true));
+    // Only players who actually finish the walkthrough (not Skip) go on to
+    // the hands-on level -- practice on real controls/mechanics before a
+    // real run starts.
+    if (finishedAll && mounted) {
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const TutorialLevelScreen()));
+    }
     if (mounted) _setPaused(false);
   }
 
@@ -212,7 +238,9 @@ class _GameScreenState extends State<GameScreen>
     _countdownTimer?.cancel();
     _focusNode.dispose();
     _anim.dispose();
-    unawaited(widget.audio.stopMusic());
+    // Music is shared across the whole app now (one track for menu and
+    // every mode), so leaving this screen shouldn't stop it -- it just
+    // keeps playing back on the menu underneath.
     super.dispose();
   }
 
@@ -253,6 +281,16 @@ class _GameScreenState extends State<GameScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed && _state == GameState.playing) {
       _setPaused(true);
+    } else if (state == AppLifecycleState.resumed &&
+        _state == GameState.paused &&
+        _showingCountdown) {
+      // Backgrounding mid-countdown is the only way to reach "paused" while
+      // _showingCountdown is true -- manual pause is blocked during it (see
+      // _togglePause) -- so there's no Pause Menu button to resume from
+      // (build() only shows one once the countdown is done). Pick the
+      // countdown back up automatically instead of stranding the player on
+      // a frozen "3" forever.
+      _setPaused(false);
     }
   }
 
@@ -292,6 +330,7 @@ class _GameScreenState extends State<GameScreen>
     _heldColor = null;
     _holdUsed = false;
     _lockResets = 0;
+    _lastMirrored = false;
     _seed = cfg.useDailySeed
         ? DailyChallengeService.seedForToday()
         : _rand.nextInt(1 << 31);
@@ -362,6 +401,14 @@ class _GameScreenState extends State<GameScreen>
   void _beginReadyCountdown() {
     _showingCountdown = true;
     _countdownValue = 3; // renders as 3, 2, 1, then GO! at 0.
+    _armCountdownTimer();
+  }
+
+  /// Starts (or resumes, after a pause suspended it) the ready-countdown
+  /// ticker from the current [_countdownValue] -- split out of
+  /// [_beginReadyCountdown] so [_setPaused] can re-arm it without resetting
+  /// the count back to 3.
+  void _armCountdownTimer() {
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_countdownValue == 0) {
@@ -557,7 +604,12 @@ class _GameScreenState extends State<GameScreen>
     if (resetHold) _holdUsed = false;
     final width = _pieceWidth(type);
     final spawnCol = ((_config.cols - width) ~/ 2).clamp(0, _config.cols - 1);
-    _active = ActivePiece(type: type, row: 0, col: spawnCol);
+    _active = ActivePiece(
+      type: type,
+      row: 0,
+      col: spawnCol,
+      mirrored: _lastMirrored,
+    );
     _anim.snapPiece(Offset(_active!.col.toDouble(), _active!.row.toDouble()));
     if (!_canPlace(_active!)) {
       if (cfg.softFloor) {
@@ -860,6 +912,7 @@ class _GameScreenState extends State<GameScreen>
       manual: true,
     );
     if (moved) {
+      _lastMirrored = toggled.mirrored;
       _recordInput(ReplayInputType.mirror);
       _runMirrorUses++;
       unawaited(_haptic(HapticFeedback.selectionClick));
@@ -1233,10 +1286,20 @@ class _GameScreenState extends State<GameScreen>
       _timer?.cancel();
       _cancelLock();
       _stopwatch.stop();
+      if (_showingCountdown) {
+        // Suspend the ready countdown too -- otherwise it keeps firing in
+        // the background regardless of pause state and can call _beginRun
+        // (starting the stopwatch/clock for real) while still "paused".
+        _countdownTimer?.cancel();
+        _countdownTimer = null;
+      }
       setState(() => _state = GameState.paused);
     } else if (!paused && _state == GameState.paused) {
       setState(() => _state = GameState.playing);
-      if (_showingCountdown) return; // still waiting out the ready countdown
+      if (_showingCountdown) {
+        _armCountdownTimer(); // resume the ready countdown where it left off
+        return;
+      }
       _stopwatch.start();
       _restartTimer();
       if (_active != null &&
@@ -1418,7 +1481,11 @@ class _GameScreenState extends State<GameScreen>
     return Positioned.fill(
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: Colors.black54,
+          // Input already unblocks the instant "GO!" shows (see
+          // _canAcceptInput) -- drop the opaque dimming here too, so the
+          // player can actually see the board react instead of moving
+          // blind behind the backdrop for that last second.
+          color: isGo ? Colors.transparent : Colors.black54,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Center(
@@ -1462,7 +1529,11 @@ class _GameScreenState extends State<GameScreen>
           ),
         );
       },
-      onQuit: () => Navigator.of(context).pop(),
+      // Ends the run the same way a top-out/time-up/line-target finish
+      // does -- persists the score/stats/achievements and shows the normal
+      // Results screen (whose own "Menu" button returns here) -- rather
+      // than abandoning the run with nothing saved.
+      onQuit: _endGame,
     );
   }
 
@@ -1485,6 +1556,7 @@ class _GameScreenState extends State<GameScreen>
           speedBoost: _speedBoost,
           upcoming: _upcoming,
           upcomingColors: _resolvedUpcomingColors,
+          nextMirrored: _lastMirrored,
           held: _held,
           heldColor: _resolvedHeldColor,
           theme: widget.theme.current,
@@ -1529,6 +1601,7 @@ class _GameScreenState extends State<GameScreen>
             upcomingColor: _resolvedUpcomingColors.isEmpty
                 ? null
                 : _resolvedUpcomingColors.first,
+            nextMirrored: _lastMirrored,
             theme: widget.theme.current,
             colorMode: widget.settings.pieceColorMode,
             anim: _anim,

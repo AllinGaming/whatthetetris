@@ -64,15 +64,10 @@ enum MusicTrack {
   const MusicTrack(this.asset);
   final String asset;
 
-  /// Zen and Chill get the calmer ambient bed (docs/GDD.md SS7) — both are
-  /// the low-pressure/practice-flavored modes; Arcade gets its own punchier
-  /// loop to match its manual speed-boost adrenaline; everything else gets
-  /// the steady marathon climb.
-  static MusicTrack forMode(GameMode mode) => switch (mode) {
-    GameMode.zen || GameMode.chill => MusicTrack.zen,
-    GameMode.arcade => MusicTrack.arcade,
-    _ => MusicTrack.marathon,
-  };
+  /// Every mode (and the menu) shares Chill's calm ambient bed rather than
+  /// switching tracks per mode — one consistent musical identity for the
+  /// whole app.
+  static MusicTrack forMode(GameMode mode) => MusicTrack.zen;
 }
 
 /// Central audio gateway: independent music/SFX volume, a master mute, and
@@ -105,13 +100,23 @@ class AudioService extends ChangeNotifier {
 
   Future<void> setMuted(bool value) async {
     await _prefs.setBool(_keyMuted, value);
-    await _musicPlayer.setVolume(value ? 0 : musicVolume);
+    try {
+      await _musicPlayer.setVolume(value ? 0 : musicVolume);
+    } catch (_) {
+      // Same reasoning as playMusic -- never let audio break gameplay.
+    }
     notifyListeners();
   }
 
   Future<void> setMusicVolume(double value) async {
     await _prefs.setDouble(_keyMusicVolume, value);
-    if (!muted) await _musicPlayer.setVolume(value);
+    if (!muted) {
+      try {
+        await _musicPlayer.setVolume(value);
+      } catch (_) {
+        // Same reasoning as playMusic -- never let audio break gameplay.
+      }
+    }
     notifyListeners();
   }
 
@@ -122,6 +127,7 @@ class AudioService extends ChangeNotifier {
 
   Future<void> playMusic(MusicTrack track) async {
     if (_currentTrack == track) return;
+    final previousTrack = _currentTrack;
     _currentTrack = track;
     try {
       await _musicPlayer.stop();
@@ -129,7 +135,10 @@ class AudioService extends ChangeNotifier {
       await _musicPlayer.play(AssetSource('audio/${track.asset}'));
     } catch (_) {
       // Autoplay/codec issues (e.g. web before a user gesture) must never
-      // crash the game -- audio is enhancement, not a dependency.
+      // crash the game -- audio is enhancement, not a dependency. Roll back
+      // so a later retry (e.g. once a user gesture unlocks web autoplay)
+      // isn't silently skipped by the guard above.
+      _currentTrack = previousTrack;
     }
   }
 

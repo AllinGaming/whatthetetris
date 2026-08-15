@@ -23,7 +23,12 @@ class _JuicyButtonState extends State<JuicyButton> {
   bool _pressed = false;
 
   void _setPressed(bool value) {
-    if (widget.onPressed == null) return;
+    // Only guards against showing press feedback on a disabled button --
+    // must NOT also block the release/cancel reset, or a button that gets
+    // disabled by its own onPressed (e.g. Hard Drop ending the game)
+    // between pointer-down and pointer-up gets stuck permanently scaled
+    // down, since onPressed is already null by the time the reset fires.
+    if (value && widget.onPressed == null) return;
     setState(() => _pressed = value);
   }
 

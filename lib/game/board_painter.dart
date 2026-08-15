@@ -160,13 +160,16 @@ class BoardPainter extends CustomPainter {
       }
     }
 
+    // One reused Paint for the whole burst rather than one per particle —
+    // a fast combo/tetris can have dozens alive at once, every frame.
+    final particlePaint = Paint();
     for (final p in anim.activeParticles) {
       final px = p.position.dx * cell;
       final py = startY + p.position.dy * cell;
       canvas.drawCircle(
         Offset(px, py),
         cell * 0.09,
-        Paint()..color = p.color.withValues(alpha: p.opacity),
+        particlePaint..color = p.color.withValues(alpha: p.opacity),
       );
     }
 

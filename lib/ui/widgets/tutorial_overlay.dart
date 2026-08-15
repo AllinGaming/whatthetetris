@@ -184,10 +184,21 @@ class TutorialOverlay extends StatefulWidget {
   const TutorialOverlay({
     super.key,
     required this.onDone,
+    this.onSkip,
     this.reduceMotion = false,
   });
 
+  /// Called when the player reaches the end and taps "Let's go" — i.e. they
+  /// actually finished the walkthrough, as opposed to bailing out early.
   final VoidCallback onDone;
+
+  /// Called when Skip is tapped instead, from any page. Defaults to
+  /// [onDone] when omitted, preserving every existing caller's exact
+  /// current behavior (Skip and "Let's go" both just close this dialog) —
+  /// only a caller that wants to tell the two apart (e.g. to skip a
+  /// follow-on step that should only run after finishing) needs to pass
+  /// this separately.
+  final VoidCallback? onSkip;
 
   /// Forwarded to the Mirror Flip/Fusion pages' looping demo widgets — see
   /// `SettingsService.reduceMotion`.
@@ -220,6 +231,12 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
     if (_closing) return;
     _closing = true;
     widget.onDone();
+  }
+
+  void _skip() {
+    if (_closing) return;
+    _closing = true;
+    (widget.onSkip ?? widget.onDone)();
   }
 
   void _next() {
@@ -311,7 +328,7 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  TextButton(onPressed: _finish, child: const Text('Skip')),
+                  TextButton(onPressed: _skip, child: const Text('Skip')),
                   FilledButton(
                     onPressed: _next,
                     child: Text(isLast ? "Let's go" : 'Next'),

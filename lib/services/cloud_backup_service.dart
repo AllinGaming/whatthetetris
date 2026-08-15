@@ -93,9 +93,25 @@ class CloudBackupService extends ChangeNotifier {
             stats.bestComboEver,
             remoteStats['bestComboEver'],
           ),
+          'bestBackToBackEver': _maxInt(
+            stats.bestBackToBackEver,
+            remoteStats['bestBackToBackEver'],
+          ),
           'totalPlaytimeMs': _maxInt(
             stats.totalPlaytimeMs,
             remoteStats['totalPlaytimeMs'],
+          ),
+          'totalMirrorUses': _maxInt(
+            stats.totalMirrorUses,
+            remoteStats['totalMirrorUses'],
+          ),
+          'totalCavityFills': _maxInt(
+            stats.totalCavityFills,
+            remoteStats['totalCavityFills'],
+          ),
+          'maxSpeedBoostEver': _maxInt(
+            stats.maxSpeedBoostEver,
+            remoteStats['maxSpeedBoostEver'],
           ),
         };
 

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../game/tutorial_level_screen.dart';
 import '../models/piece.dart';
 import '../models/theme_palette.dart';
 import '../services/audio_service.dart';
@@ -28,6 +29,61 @@ class SettingsScreen extends StatelessWidget {
   final SettingsService settings;
   final ThemeService theme;
   final LiveServices live;
+
+  /// Random strips out the only signal Duo gives for free (which triangle
+  /// half a cell still needs), so switching to it is a real difficulty
+  /// jump, not just a cosmetic pick — worth a confirm rather than a
+  /// one-tap accident (matches the same picker on the start screen).
+  Future<void> _confirmRandomColorMode(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Switch to Random colors?'),
+        content: const Text(
+          "This makes the game visually much harder to play — color won't "
+          'tell you anything about a piece\'s shape or which triangle half '
+          'it needs anymore.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Switch'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await settings.setPieceColorMode(PieceColorMode.random);
+    }
+  }
+
+  Future<void> _showTutorial(BuildContext context) async {
+    var finishedAll = false;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => TutorialOverlay(
+        reduceMotion: settings.reduceMotion,
+        onDone: () {
+          finishedAll = true;
+          Navigator.of(dialogContext).pop();
+        },
+        onSkip: () => Navigator.of(dialogContext).pop(),
+      ),
+    );
+    unawaited(settings.setHasSeenTutorial(true));
+    // Only players who actually finish the walkthrough (not Skip) go on to
+    // the hands-on level.
+    if (finishedAll && context.mounted) {
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const TutorialLevelScreen()));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -77,17 +133,7 @@ class SettingsScreen extends StatelessWidget {
                               Icons.chevron_right,
                               color: Colors.white38,
                             ),
-                            onTap: () => showDialog<void>(
-                              context: context,
-                              barrierDismissible: false,
-                              builder: (dialogContext) => TutorialOverlay(
-                                reduceMotion: settings.reduceMotion,
-                                onDone: () {
-                                  unawaited(settings.setHasSeenTutorial(true));
-                                  Navigator.of(dialogContext).pop();
-                                },
-                              ),
-                            ),
+                            onTap: () => _showTutorial(context),
                           ),
                         ],
                       ),
@@ -227,25 +273,23 @@ class SettingsScreen extends StatelessWidget {
                             ),
                             title: const Text('Piece colors'),
                             subtitle: const Text(
-                              'Duo highlights which triangle half a cell needs; '
-                              'Funky is harder to read; Random breaks the '
-                              'color-shape link entirely',
+                              'Duo signals each triangle half; Random is '
+                              'much harder to read',
                             ),
                             trailing: DropdownButton<PieceColorMode>(
                               value: settings.pieceColorMode,
                               onChanged: (v) {
-                                if (v != null) {
+                                if (v == null) return;
+                                if (v == PieceColorMode.random) {
+                                  unawaited(_confirmRandomColorMode(context));
+                                } else {
                                   unawaited(settings.setPieceColorMode(v));
                                 }
                               },
                               items: const [
                                 DropdownMenuItem(
                                   value: PieceColorMode.duo,
-                                  child: Text('Duo'),
-                                ),
-                                DropdownMenuItem(
-                                  value: PieceColorMode.colored,
-                                  child: Text('Funky (harder)'),
+                                  child: Text('Duo (Recommended)'),
                                 ),
                                 DropdownMenuItem(
                                   value: PieceColorMode.random,
@@ -358,8 +402,19 @@ class _CloudBackupSection extends StatelessWidget {
           TextButton(
             onPressed: () async {
               Navigator.of(dialogContext).pop();
-              await live.backup.deleteAllData();
-              await live.auth.deleteAccount();
+              final dataOk = await live.backup.deleteAllData();
+              final accountOk = dataOk && await live.auth.deleteAccount();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      accountOk
+                          ? 'Your cloud backup and account were deleted.'
+                          : "That didn't go through — try again anytime.",
+                    ),
+                  ),
+                );
+              }
             },
             child: const Text('Delete'),
           ),
