@@ -9,7 +9,9 @@ import '../models/board.dart';
 import '../models/piece.dart';
 import '../models/pieces.dart';
 import '../models/theme_palette.dart';
+import '../services/settings_service.dart';
 import '../ui/widgets/neon_text.dart';
+import '../ui/widgets/touch_dpad.dart';
 import 'board_painter.dart';
 import 'game_animations.dart';
 import 'game_board.dart';
@@ -17,14 +19,20 @@ import 'game_board.dart';
 enum _Step { moveRotateDrop, mirror, fusion, hold, cavityFill, done }
 
 /// A real, playable mini board that teaches this game's mechanics by doing
-/// them, rather than the isolated demo widgets in [TutorialOverlay] (shown
-/// right before this, whose final "Let's go" leads here). Deliberately
-/// consequence-free: no score, no stats, and — unlike real gameplay — no
-/// gravity timer at all. A piece just sits until moved or dropped, which
-/// keeps every step fully player-paced and removes any timer-vs-step race
-/// to worry about.
+/// them. Deliberately consequence-free: no score, no stats, and — unlike
+/// real gameplay — no gravity timer at all. A piece just sits until moved
+/// or dropped, which keeps every step fully player-paced and removes any
+/// timer-vs-step race to worry about.
+///
+/// Mirrors [GameScreen]'s own dual input model rather than being
+/// keyboard-only: a [TouchDpad] on mobile under [TouchControlScheme.buttons]
+/// (the default), or the same swipe/tap/double-tap/long-press board
+/// gestures under [TouchControlScheme.gestures] — otherwise this screen is
+/// simply unplayable on a phone with no physical keyboard.
 class TutorialLevelScreen extends StatefulWidget {
-  const TutorialLevelScreen({super.key});
+  const TutorialLevelScreen({super.key, required this.settings});
+
+  final SettingsService settings;
 
   @override
   State<TutorialLevelScreen> createState() => _TutorialLevelScreenState();
@@ -34,14 +42,27 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
     with TickerProviderStateMixin {
   static const _config = Config(rows: 10, cols: 6);
   static const _theme = ThemePalette.neon;
+  static const _mobileBreakpoint = 600.0;
 
   /// Same simplified kick table as the real game (docs/GDD.md SS4.4) — kept
   /// identical so rotation feels the same here as it will in a real run.
   static const _kicks = [0, -1, 1, -2, 2];
 
+  /// Same thresholds [GameScreen] uses for its board gestures, so drag/
+  /// swipe/fling feel identical here and in a real run.
+  static const _dragLockThreshold = 8.0;
+  static const _hardDropFlingVelocity = 1200.0;
+  static const _rotateSwipeVelocity = 700.0;
+
   late GameBoard _board;
   late final GameAnimations _anim = GameAnimations(vsync: this);
+  final _boardStaticCache = BoardStaticCache();
   final _focusNode = FocusNode();
+
+  double _cellSize = 1;
+  double _dragDx = 0;
+  double _dragDy = 0;
+  bool? _dragHorizontal;
 
   _Step _step = _Step.moveRotateDrop;
   ActivePiece? _active;
@@ -179,13 +200,27 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
     _completeStep();
   }
 
-  void _cavityFill() {
+  Color _cavityFillColor(TriHalf fillTri, Color existing) =>
+      fillTri == TriHalf.tr ? duoTrColor : duoBlColor;
+
+  /// The keyboard-G / D-pad-button path.
+  void _cavityFillLowest() {
     if (_step != _Step.cavityFill || _cavityCharges <= 0) return;
-    final filled = _board.fillLowestCavity(
-      colorForFill: (fillTri, existing) =>
-          fillTri == TriHalf.tr ? duoTrColor : duoBlColor,
-    );
-    if (!filled) return;
+    if (_board.fillLowestCavity(colorForFill: _cavityFillColor) != null) {
+      _onCavityFilled();
+    }
+  }
+
+  /// The gesture scheme's tap-a-specific-cell path (see [_handleBoardTap]),
+  /// matching how the real game's gesture scheme works.
+  void _cavityFillAt(int row, int col) {
+    if (_step != _Step.cavityFill || _cavityCharges <= 0) return;
+    if (_board.fillCavityAt(row, col, colorForFill: _cavityFillColor)) {
+      _onCavityFilled();
+    }
+  }
+
+  void _onCavityFilled() {
     _cavityCharges--;
     setState(() {});
     _completeStep();
@@ -290,24 +325,109 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
         _hardDrop();
         break;
       case LogicalKeyboardKey.keyG:
-        _cavityFill();
+        _cavityFillLowest();
         break;
     }
+  }
+
+  bool get _gestureScheme =>
+      widget.settings.touchControlScheme == TouchControlScheme.gestures;
+
+  /// The board cell under a local tap position, or null if it fell outside
+  /// the board -- see `GameScreen._cellAt`, the same reasoning applies here
+  /// (a single cell size covers both axes since the board's aspect ratio is
+  /// locked to [_config]'s rows/cols).
+  (int, int)? _cellAt(Offset localPosition) {
+    if (_cellSize <= 0) return null;
+    final row = (localPosition.dy / _cellSize).floor();
+    final col = (localPosition.dx / _cellSize).floor();
+    if (row < 0 || row >= _config.rows || col < 0 || col >= _config.cols) {
+      return null;
+    }
+    return (row, col);
+  }
+
+  bool _isCavityCell(int row, int col) {
+    final cell = _board.cells[row][col];
+    if (cell.full != null) return false;
+    return (cell.bl != null) != (cell.tr != null);
+  }
+
+  /// Same board-tap semantics as the real game: rotates under
+  /// [TouchControlScheme.buttons], but under [TouchControlScheme.gestures]
+  /// a tap mirrors instead -- unless it lands on a cavity cell, in which
+  /// case it fills that specific cavity.
+  void _handleBoardTap(Offset localPosition) {
+    if (!_gestureScheme) {
+      _rotate(1);
+      return;
+    }
+    final cell = _cellAt(localPosition);
+    if (cell != null && _isCavityCell(cell.$1, cell.$2)) {
+      _cavityFillAt(cell.$1, cell.$2);
+      return;
+    }
+    _mirror();
+  }
+
+  void _onBoardPanStart(DragStartDetails details) {
+    _dragDx = 0;
+    _dragDy = 0;
+    _dragHorizontal = null;
+  }
+
+  void _onBoardPanUpdate(DragUpdateDetails details) {
+    _dragDx += details.delta.dx;
+    _dragDy += details.delta.dy;
+    _dragHorizontal ??=
+        (_dragDx.abs() >= _dragLockThreshold ||
+            _dragDy.abs() >= _dragLockThreshold)
+        ? _dragDx.abs() >= _dragDy.abs()
+        : null;
+
+    if (_cellSize <= 0) return;
+    if (_dragHorizontal == true) {
+      while (_dragDx >= _cellSize) {
+        _move(1, 0);
+        _dragDx -= _cellSize;
+      }
+      while (_dragDx <= -_cellSize) {
+        _move(-1, 0);
+        _dragDx += _cellSize;
+      }
+    } else if (_dragHorizontal == false) {
+      while (_dragDy >= _cellSize) {
+        _move(0, 1);
+        _dragDy -= _cellSize;
+      }
+      if (_dragDy < 0) _dragDy = 0; // dragging back up never moves it down
+    }
+  }
+
+  void _onBoardPanEnd(DragEndDetails details) {
+    if (_dragHorizontal == false) {
+      final dy = details.velocity.pixelsPerSecond.dy;
+      if (dy > _hardDropFlingVelocity) {
+        _hardDrop();
+      } else if (_gestureScheme && dy < -_rotateSwipeVelocity) {
+        _rotate(1);
+      }
+    }
+    _dragDx = 0;
+    _dragDy = 0;
+    _dragHorizontal = null;
   }
 
   String get _instruction {
     if (_successMessage != null) return _successMessage!;
     return switch (_step) {
       _Step.moveRotateDrop =>
-        _readyToDrop
-            ? 'Now press Space to drop it.'
-            : 'Move it (← / →) and rotate it (↑ or Q).',
-      _Step.mirror =>
-        "This piece won't fuse as-is — press M to mirror it, then Space to drop it.",
+        _readyToDrop ? 'Now drop it!' : 'Move it, then rotate it.',
+      _Step.mirror => "This piece won't fuse as-is — mirror it, then drop it.",
       _Step.fusion =>
-        'Mirror it (M), then drop it (Space) anywhere on the bottom row to fuse it.',
-      _Step.hold => 'Press C to hold this piece for later.',
-      _Step.cavityFill => 'Press G to instantly fill that stray gap.',
+        'Mirror it, then drop it anywhere on the bottom row to fuse it.',
+      _Step.hold => 'Hold this piece for later.',
+      _Step.cavityFill => 'Fill that stray gap.',
       _Step.done => "You're ready — go play!",
     };
   }
@@ -324,62 +444,115 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
         autofocus: true,
         onKeyEvent: _handleKey,
         child: SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 4, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _instruction,
-                        style: TextStyle(
-                          color: _successMessage != null
-                              ? Colors.greenAccent
-                              : Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                          shadows: neonShadows(accent, intensity: 0.5),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final mobile = constraints.maxWidth < _mobileBreakpoint;
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 4, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _instruction,
+                            style: TextStyle(
+                              color: _successMessage != null
+                                  ? Colors.greenAccent
+                                  : Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              shadows: neonShadows(accent, intensity: 0.5),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      child: const Text('Skip'),
-                    ),
-                  ],
-                ),
-              ),
-              _buildStepDots(accent),
-              const SizedBox(height: 8),
-              Expanded(
-                child: Center(
-                  child: AspectRatio(
-                    aspectRatio: _config.cols / _config.rows,
-                    child: CustomPaint(
-                      painter: BoardPainter(
-                        board: _board.cells,
-                        active: _active,
-                        ghost: null,
-                        config: _board.config,
-                        boardRevision: _board.revision,
-                        state: GameState.playing,
-                        lockedCells: const [],
-                        clearingRows: const [],
-                        anim: _anim,
-                        theme: _theme,
-                        colorMode: PieceColorMode.duo,
-                        activeThemeColor: accent,
-                      ),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).maybePop(),
+                          child: const Text('Skip'),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 24),
-            ],
+                  _buildStepDots(accent),
+                  const SizedBox(height: 8),
+                  Expanded(child: _buildBoardArea(accent)),
+                  // Buttons scheme gets the same on-screen D-pad the real
+                  // game uses; gestures scheme plays entirely on the board
+                  // itself (see the GestureDetector in _buildBoardArea), so
+                  // showing the pad too would just be redundant.
+                  if (mobile && !_gestureScheme) ...[
+                    const SizedBox(height: 12),
+                    _buildTouchDpad(),
+                  ],
+                  const SizedBox(height: 16),
+                ],
+              );
+            },
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildBoardArea(Color accent) {
+    return Center(
+      child: AspectRatio(
+        aspectRatio: _config.cols / _config.rows,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            _cellSize = constraints.maxWidth / _config.cols;
+            return GestureDetector(
+              onTapUp: (details) => _handleBoardTap(details.localPosition),
+              // Only wired under gestures -- adding it unconditionally
+              // would make Flutter wait out the double-tap timeout before
+              // ever firing a plain tap, adding input lag under buttons.
+              onDoubleTap: _gestureScheme ? _hardDrop : null,
+              onLongPress: _hold,
+              onPanStart: _onBoardPanStart,
+              onPanUpdate: _onBoardPanUpdate,
+              onPanEnd: _onBoardPanEnd,
+              child: CustomPaint(
+                painter: BoardPainter(
+                  board: _board.cells,
+                  active: _active,
+                  ghost: null,
+                  config: _board.config,
+                  boardRevision: _board.revision,
+                  state: GameState.playing,
+                  lockedCells: const [],
+                  clearingRows: const [],
+                  anim: _anim,
+                  theme: _theme,
+                  colorMode: PieceColorMode.duo,
+                  activeThemeColor: accent,
+                  staticCache: _boardStaticCache,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTouchDpad() {
+    return TouchDpad(
+      enabled: _canAct,
+      onMoveLeft: () => _move(-1, 0),
+      onMoveRight: () => _move(1, 0),
+      onSoftDrop: () => _move(0, 1),
+      onRotateLeft: () => _rotate(-1),
+      onRotateRight: () => _rotate(1),
+      onMirror: _mirror,
+      onHold: _hold,
+      canHold: true,
+      onHardDrop: _hardDrop,
+      onFillCavities: _cavityFillLowest,
+      cavityCharges: _cavityCharges,
+      onSpeedUp: null,
+      speedBoost: 0,
+      reduceMotion: widget.settings.reduceMotion,
+      handedness: widget.settings.touchHandedness,
     );
   }
 

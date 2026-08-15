@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:whatthetetris/game/board_painter.dart';
 import 'package:whatthetetris/game/game_screen.dart';
+import 'package:whatthetetris/game/tutorial_level_screen.dart';
 import 'package:whatthetetris/main.dart';
 import 'package:whatthetetris/models/game_mode.dart';
 import 'package:whatthetetris/models/piece.dart';
@@ -28,7 +29,6 @@ import 'package:whatthetetris/ui/settings_screen.dart';
 import 'package:whatthetetris/ui/start_screen.dart';
 import 'package:whatthetetris/ui/widgets/pause_menu.dart';
 import 'package:whatthetetris/ui/widgets/touch_dpad.dart';
-import 'package:whatthetetris/ui/widgets/tutorial_overlay.dart';
 
 /// Defaults used by every test that isn't specifically exercising the
 /// first-run tutorial overlay, so that dialog doesn't block taps on the
@@ -154,13 +154,12 @@ void main() {
 
       await _tapMode(tester, 'Classic');
 
-      expect(find.text('Move & Rotate'), findsOneWidget);
-      expect(find.byType(AlertDialog), findsNothing); // it's a Dialog, not one
+      expect(find.byType(TutorialLevelScreen), findsOneWidget);
 
       await tester.tap(find.text('Skip'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Move & Rotate'), findsNothing);
+      expect(find.byType(TutorialLevelScreen), findsNothing);
       expect(settings.hasSeenTutorial, isTrue);
 
       // Controls actually work now that the modal is gone.
@@ -483,13 +482,12 @@ void main() {
     await tester.tap(find.byTooltip('How to Play'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(TutorialOverlay), findsOneWidget);
-    expect(find.text('Move & Rotate'), findsOneWidget);
+    expect(find.byType(TutorialLevelScreen), findsOneWidget);
 
     await tester.tap(find.text('Skip'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(TutorialOverlay), findsNothing);
+    expect(find.byType(TutorialLevelScreen), findsNothing);
   });
 
   testWidgets('How to Play is also reachable from Settings', (
@@ -508,12 +506,12 @@ void main() {
     await tester.tap(find.text('How to Play'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(TutorialOverlay), findsOneWidget);
+    expect(find.byType(TutorialLevelScreen), findsOneWidget);
 
     await tester.tap(find.text('Skip'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(TutorialOverlay), findsNothing);
+    expect(find.byType(TutorialLevelScreen), findsNothing);
   });
 
   testWidgets('a wide window gets the desktop side panel, not the touch pad', (

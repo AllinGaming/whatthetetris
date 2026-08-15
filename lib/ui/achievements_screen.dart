@@ -42,28 +42,41 @@ class AchievementsScreen extends StatelessWidget {
             style: TextStyle(shadows: neonShadows(accent, intensity: 0.6)),
           ),
         ),
+        // SingleChildScrollView outside Center (not the other way around) so
+        // its hit-testable width is the full screen -- otherwise it only
+        // sizes itself to its centered, width-capped content, leaving dead
+        // margins on wider screens where a drag silently does nothing
+        // instead of scrolling.
         body: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: ListView(
-                padding: const EdgeInsets.all(20),
-                children: [
-                  _StatsGrid(stats: stats),
-                  const SizedBox(height: 20),
-                  ScoreTrendSparkline(values: stats.recentForm, accent: accent),
-                  const SizedBox(height: 24),
-                  Text(
-                    'ACHIEVEMENTS  ($unlockedCount/${Achievement.all.length})',
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: accent,
-                      letterSpacing: 1.2,
-                    ),
+          child: SingleChildScrollView(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _StatsGrid(stats: stats),
+                      const SizedBox(height: 20),
+                      ScoreTrendSparkline(
+                        values: stats.recentForm,
+                        accent: accent,
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'ACHIEVEMENTS  ($unlockedCount/${Achievement.all.length})',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: accent,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      for (final achievement in Achievement.all)
+                        _AchievementTile(achievement: achievement, ctx: ctx),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  for (final achievement in Achievement.all)
-                    _AchievementTile(achievement: achievement, ctx: ctx),
-                ],
+                ),
               ),
             ),
           ),

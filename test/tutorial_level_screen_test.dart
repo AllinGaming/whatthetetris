@@ -1,13 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:whatthetetris/game/tutorial_level_screen.dart';
+import 'package:whatthetetris/services/settings_service.dart';
+
+/// The mobile TouchDpad's hero-button glow loops via AnimationController
+/// .repeat() while enabled, which is correct in production but leaves
+/// pumpAndSettle waiting for a frame that never stops being scheduled (see
+/// the same reasoning in widget_test.dart). Flagging OS-level "reduce
+/// motion" makes it settle on a static frame instead.
+void _disableTestAnimations(WidgetTester tester) {
+  tester.platformDispatcher.accessibilityFeaturesTestValue =
+      const FakeAccessibilityFeatures(disableAnimations: true);
+  addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+}
 
 /// Pushes the tutorial level on top of a placeholder screen — Skip calls
 /// `Navigator.maybePop`, which only actually pops when there's something to
 /// pop back to, matching how every real caller pushes this screen.
 Future<void> _pumpPushed(WidgetTester tester) async {
+  _disableTestAnimations(tester);
+  SharedPreferences.setMockInitialValues({});
+  final settings = await SettingsService.create();
   await tester.pumpWidget(
     MaterialApp(
       home: Builder(
@@ -15,7 +31,9 @@ Future<void> _pumpPushed(WidgetTester tester) async {
           body: Center(
             child: ElevatedButton(
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const TutorialLevelScreen()),
+                MaterialPageRoute(
+                  builder: (_) => TutorialLevelScreen(settings: settings),
+                ),
               ),
               child: const Text('open'),
             ),
@@ -75,14 +93,14 @@ void main() {
     await tester.pump();
     await _advance(tester);
 
-    expect(find.textContaining('hold this piece'), findsOneWidget);
+    expect(find.textContaining('Hold this piece'), findsOneWidget);
 
     // Step 4: Hold.
     await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
     await tester.pump();
     await _advance(tester);
 
-    expect(find.textContaining('fill that stray gap'), findsOneWidget);
+    expect(find.textContaining('Fill that stray gap'), findsOneWidget);
 
     // Step 5: Cavity Fill.
     await tester.sendKeyEvent(LogicalKeyboardKey.keyG);

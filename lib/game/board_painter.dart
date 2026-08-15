@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../models/active_piece.dart';
@@ -6,6 +8,21 @@ import '../models/piece.dart';
 import '../models/theme_palette.dart';
 import 'game_animations.dart';
 import 'tri_paint.dart';
+
+/// Persists the recorded "static" half of the board (background/grid/locked
+/// cells/border/pause overlay) across [BoardPainter] instances, which are
+/// recreated on every rebuild. A [BoardPainter] repaints at 60fps for the
+/// entire time any piece is falling (see [GameAnimations.move] retargeting
+/// on every gravity tick in `GameScreen._tick`), but locked-cell content
+/// itself only actually changes on a lock/clear/cavity-fill -- redrawing
+/// all ~200 cells from scratch on every one of those frames was a real,
+/// measurable cost (shader/Paint work per cell, every frame, for the whole
+/// game). Owned by `GameScreen` as a single long-lived instance (unlike the
+/// painter) so the cache survives across rebuilds.
+class BoardStaticCache {
+  ui.Picture? picture;
+  Object? key;
+}
 
 class BoardPainter extends CustomPainter {
   BoardPainter({
@@ -21,6 +38,7 @@ class BoardPainter extends CustomPainter {
     required this.theme,
     required this.colorMode,
     required this.activeThemeColor,
+    required this.staticCache,
   }) : super(repaint: anim.repaint);
 
   final List<List<CellOccupancy>> board;
@@ -34,6 +52,7 @@ class BoardPainter extends CustomPainter {
   final GameAnimations anim;
   final ThemePalette theme;
   final PieceColorMode colorMode;
+  final BoardStaticCache staticCache;
 
   /// The falling piece's already-resolved color — pre-resolved by the caller
   /// (rather than this painter calling `theme.colorFor(active.type.name)`
@@ -48,6 +67,53 @@ class BoardPainter extends CustomPainter {
     final cell = size.width / config.cols;
     final startY = size.height - config.rows * cell;
 
+    _paintStatic(canvas, size, cell, startY);
+    _paintDynamic(canvas, size, cell, startY);
+  }
+
+  /// Background, grid, locked cells (with their brief post-lock glow), and
+  /// the clearing-row flash — recorded once into a cached [ui.Picture] and
+  /// simply replayed on subsequent frames where none of that content
+  /// actually changed, instead of reissuing ~200 cells' worth of paint
+  /// calls every frame.
+  void _paintStatic(Canvas canvas, Size size, double cell, double startY) {
+    final lockFlashActive = anim.lockFlash.isAnimating;
+    final lineClearActive = anim.lineClear.isAnimating;
+    final key = (
+      size,
+      board,
+      boardRevision,
+      lockedCells,
+      clearingRows,
+      theme,
+      colorMode,
+      state,
+      // -1 when idle so the key stays stable between animations (both read
+      // as "not animating") rather than pinning to whatever value each
+      // happened to end on.
+      lockFlashActive ? anim.lockFlash.value : -1.0,
+      lineClearActive ? anim.lineClear.value : -1.0,
+    );
+
+    if (staticCache.picture == null ||
+        staticCache.key != key ||
+        lockFlashActive ||
+        lineClearActive) {
+      final recorder = ui.PictureRecorder();
+      _recordStatic(Canvas(recorder), size, cell, startY);
+      staticCache.picture = recorder.endRecording();
+      staticCache.key = key;
+    }
+    canvas.drawPicture(staticCache.picture!);
+  }
+
+  Rect _rectFor(double row, double col, double cell, double startY) {
+    final x = col * cell;
+    final y = startY + row * cell;
+    return Rect.fromLTWH(x + 1, y + 1, cell - 2, cell - 2);
+  }
+
+  void _recordStatic(Canvas canvas, Size size, double cell, double startY) {
     canvas.drawRect(
       Rect.fromLTWH(0, 0, size.width, size.height),
       Paint()
@@ -74,12 +140,6 @@ class BoardPainter extends CustomPainter {
       canvas.drawLine(Offset(0, y), Offset(config.cols * cell, y), gridPaint);
     }
 
-    Rect rectFor(double row, double col) {
-      final x = col * cell;
-      final y = startY + row * cell;
-      return Rect.fromLTWH(x + 1, y + 1, cell - 2, cell - 2);
-    }
-
     final lockGlow = (1 - anim.lockFlash.value).clamp(0.0, 1.0);
     final lockedKeys = <int>{
       for (final c in lockedCells) c.row * config.cols + c.col,
@@ -89,7 +149,7 @@ class BoardPainter extends CustomPainter {
       for (int c = 0; c < config.cols; c++) {
         final cellData = board[r][c];
         final glow = lockedKeys.contains(r * config.cols + c) ? lockGlow : 0.0;
-        final rect = rectFor(r.toDouble(), c.toDouble());
+        final rect = _rectFor(r.toDouble(), c.toDouble(), cell, startY);
         if (cellData.full != null) {
           paintFullCell(canvas, rect, cellData.full!, glow: glow);
         } else if (cellData.bl != null && cellData.tr != null) {
@@ -120,10 +180,23 @@ class BoardPainter extends CustomPainter {
         );
       }
     }
+  }
 
+  /// Everything that genuinely needs a fresh frame every time this repaints
+  /// (the falling piece, ghost, particles, and every transient effect),
+  /// drawn directly (not cached) on top of [_paintStatic]'s picture, in the
+  /// same relative order as before the static/dynamic split so nothing's
+  /// z-order changed -- in particular the pause/game-over dim still lands
+  /// on top of the falling piece and effects, not underneath them.
+  void _paintDynamic(Canvas canvas, Size size, double cell, double startY) {
     if (ghost != null && active != null && ghost!.row != active!.row) {
       for (final cellPos in ghost!.cellsOnBoard()) {
-        final rect = rectFor(cellPos.row.toDouble(), cellPos.col.toDouble());
+        final rect = _rectFor(
+          cellPos.row.toDouble(),
+          cellPos.col.toDouble(),
+          cell,
+          startY,
+        );
         final ghostColor = resolveCellColor(
           mode: colorMode,
           themedColor: activeThemeColor,
@@ -142,9 +215,11 @@ class BoardPainter extends CustomPainter {
       final basePos = Offset(active!.col.toDouble(), active!.row.toDouble());
       final animOffset = anim.piecePos - basePos;
       for (final cellPos in active!.cellsOnBoard()) {
-        final rect = rectFor(
+        final rect = _rectFor(
           cellPos.row + animOffset.dy,
           cellPos.col + animOffset.dx,
+          cell,
+          startY,
         );
         final activeColor = resolveCellColor(
           mode: colorMode,

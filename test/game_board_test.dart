@@ -46,12 +46,71 @@ void main() {
     board.cells[0][0].bl = Colors.blue;
     board.cells[2][1].tr = Colors.orange;
 
-    expect(
-      board.fillLowestCavity(colorForFill: (_, existing) => existing),
-      isTrue,
-    );
+    expect(board.fillLowestCavity(colorForFill: (_, existing) => existing), (
+      row: 2,
+      col: 1,
+    ));
     expect(board.cells[2][1].isFullyFilled, isTrue);
     expect(board.cells[0][0].isFullyFilled, isFalse);
+  });
+
+  test('fillLowestCavity returns null when there is no cavity to fill', () {
+    final board = GameBoard(const Config(rows: 2, cols: 2));
+
+    expect(
+      board.fillLowestCavity(colorForFill: (_, existing) => existing),
+      isNull,
+    );
+  });
+
+  test('fillCavityAt fills the targeted cell, not just the lowest one', () {
+    final board = GameBoard(const Config(rows: 3, cols: 2));
+    board.cells[0][0].bl = Colors.blue;
+    board.cells[2][1].tr = Colors.orange;
+
+    // The lowest cavity is (2,1), but this targets (0,0) specifically.
+    expect(
+      board.fillCavityAt(0, 0, colorForFill: (_, existing) => existing),
+      isTrue,
+    );
+    expect(board.cells[0][0].isFullyFilled, isTrue);
+    expect(board.cells[2][1].isFullyFilled, isFalse);
+  });
+
+  test('fillCavityAt returns false for a non-cavity cell', () {
+    final board = GameBoard(const Config(rows: 2, cols: 2));
+    board.cells[0][0].bl = Colors.blue;
+    board.cells[0][0].tr = Colors.blue; // already complete
+    board.cells[1][1].full = Colors.red;
+
+    expect(
+      board.fillCavityAt(0, 0, colorForFill: (_, existing) => existing),
+      isFalse,
+      reason: 'already-complete cell has no cavity to fill',
+    );
+    expect(
+      board.fillCavityAt(1, 1, colorForFill: (_, existing) => existing),
+      isFalse,
+      reason: 'a full cell has no cavity to fill',
+    );
+    expect(
+      board.fillCavityAt(0, 1, colorForFill: (_, existing) => existing),
+      isFalse,
+      reason: 'a fully empty cell has no cavity to fill',
+    );
+  });
+
+  test('fillCavityAt returns false for an out-of-bounds cell', () {
+    final board = GameBoard(const Config(rows: 2, cols: 2));
+
+    expect(
+      board.fillCavityAt(-1, 0, colorForFill: (_, existing) => existing),
+      isFalse,
+    );
+    expect(
+      board.fillCavityAt(0, 5, colorForFill: (_, existing) => existing),
+      isFalse,
+    );
   });
 
   test('countFusions counts halves that complete against existing cells', () {

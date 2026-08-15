@@ -23,7 +23,6 @@ import 'widgets/fusion_hero.dart';
 import 'widgets/menu_backdrop.dart';
 import 'widgets/neon_text.dart';
 import 'widgets/next_piece_preview.dart';
-import 'widgets/tutorial_overlay.dart';
 
 const _categoryOrder = [
   ModeCategory.marathon,
@@ -79,27 +78,12 @@ class StartScreen extends StatelessWidget {
   final LiveServices live;
 
   Future<void> _showTutorial(BuildContext context) async {
-    var finishedAll = false;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => TutorialOverlay(
-        reduceMotion: settings.reduceMotion,
-        onDone: () {
-          finishedAll = true;
-          Navigator.of(dialogContext).pop();
-        },
-        onSkip: () => Navigator.of(dialogContext).pop(),
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TutorialLevelScreen(settings: settings),
       ),
     );
     unawaited(settings.setHasSeenTutorial(true));
-    // Only players who actually finish the walkthrough (not Skip) go on to
-    // the hands-on level.
-    if (finishedAll && context.mounted) {
-      await Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => const TutorialLevelScreen()));
-    }
   }
 
   /// Random strips out the only signal Duo gives for free (which triangle
@@ -148,8 +132,13 @@ class StartScreen extends StatelessWidget {
             ),
             SafeArea(
               bottom: false,
-              child: Center(
-                child: SingleChildScrollView(
+              // SingleChildScrollView outside Center (not the other way
+              // around) so its hit-testable width is the full screen --
+              // otherwise it only sizes itself to its centered, width-capped
+              // content, leaving dead margins on wider screens where a drag
+              // silently does nothing instead of scrolling.
+              child: SingleChildScrollView(
+                child: Center(
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
                       // Fills wide (desktop/web) viewports instead of

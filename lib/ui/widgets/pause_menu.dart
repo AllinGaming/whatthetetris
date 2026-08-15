@@ -76,87 +76,109 @@ class PauseMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = Theme.of(context).colorScheme.primary;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    // A fixed 280px cap left small phones with a card that was a needlessly
+    // small fraction of the screen -- scale with viewport width instead (up
+    // to a higher cap), so it actually reads as bigger on small screens
+    // instead of just floating in the middle of unused space.
+    final maxWidth = (screenWidth * 0.86).clamp(280.0, 340.0);
     return Positioned.fill(
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 280),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-            decoration: BoxDecoration(
-              color: const Color(0xFF14161F).withValues(alpha: 0.96),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: accent.withValues(alpha: 0.4)),
-              boxShadow: [
-                BoxShadow(
-                  color: accent.withValues(alpha: 0.25),
-                  blurRadius: 24,
-                  spreadRadius: 2,
-                ),
-              ],
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          // A quick pop-in rather than snapping straight to full size —
+          // TweenAnimationBuilder replays this from scratch every time a
+          // fresh PauseMenu widget mounts (every pause), which is exactly
+          // the "just appeared" moment it should play for.
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: 1),
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutBack,
+            builder: (context, t, child) => Opacity(
+              opacity: t.clamp(0.0, 1.0),
+              child: Transform.scale(scale: 0.85 + 0.15 * t, child: child),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'PAUSED',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
-                    color: accent,
-                    shadows: neonShadows(accent),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 28),
+              decoration: BoxDecoration(
+                color: const Color(0xFF14161F).withValues(alpha: 0.96),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: accent.withValues(alpha: 0.4)),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.25),
+                    blurRadius: 24,
+                    spreadRadius: 2,
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  modeLabel,
-                  style: const TextStyle(color: Colors.white54, fontSize: 12),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _MiniStat(label: 'Score', value: '$score'),
-                    Container(width: 1, height: 28, color: Colors.white12),
-                    _MiniStat(label: 'Level', value: '$level'),
-                    Container(width: 1, height: 28, color: Colors.white12),
-                    _MiniStat(label: 'Lines', value: '$lines'),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: onResume,
-                    icon: const Icon(Icons.play_arrow, size: 20),
-                    label: const Text('Resume'),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'PAUSED',
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
+                      color: accent,
+                      shadows: neonShadows(accent),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => _confirmRestart(context),
-                    icon: const Icon(Icons.replay, size: 18),
-                    label: const Text('Restart'),
+                  const SizedBox(height: 4),
+                  Text(
+                    modeLabel,
+                    style: const TextStyle(color: Colors.white54, fontSize: 13),
                   ),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: onSettings,
-                    icon: const Icon(Icons.settings_outlined, size: 18),
-                    label: const Text('Settings'),
+                  const SizedBox(height: 18),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _MiniStat(label: 'Score', value: '$score'),
+                      Container(width: 1, height: 32, color: Colors.white12),
+                      _MiniStat(label: 'Level', value: '$level'),
+                      Container(width: 1, height: 32, color: Colors.white12),
+                      _MiniStat(label: 'Lines', value: '$lines'),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 8),
-                TextButton.icon(
-                  onPressed: () => _confirmQuit(context),
-                  icon: const Icon(Icons.exit_to_app, size: 18),
-                  label: const Text('Quit to Menu'),
-                ),
-              ],
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: FilledButton.icon(
+                      onPressed: onResume,
+                      icon: const Icon(Icons.play_arrow, size: 22),
+                      label: const Text('Resume'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 46,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _confirmRestart(context),
+                      icon: const Icon(Icons.replay, size: 20),
+                      label: const Text('Restart'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 46,
+                    child: OutlinedButton.icon(
+                      onPressed: onSettings,
+                      icon: const Icon(Icons.settings_outlined, size: 20),
+                      label: const Text('Settings'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextButton.icon(
+                    onPressed: () => _confirmQuit(context),
+                    icon: const Icon(Icons.exit_to_app, size: 20),
+                    label: const Text('Quit to Menu'),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -179,12 +201,12 @@ class _MiniStat extends StatelessWidget {
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
-            fontSize: 15,
+            fontSize: 17,
           ),
         ),
         Text(
           label,
-          style: const TextStyle(color: Colors.white38, fontSize: 10),
+          style: const TextStyle(color: Colors.white38, fontSize: 11),
         ),
       ],
     );

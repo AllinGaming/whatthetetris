@@ -88,29 +88,56 @@ class GameBoard {
   /// but under [PieceColorMode.duo] it must return the fixed color for that
   /// orientation instead of copying (copying would put bl's red into a tr
   /// slot, which should always read as blue).
-  bool fillLowestCavity({
+  /// Returns the (row, col) it filled, or null if there was no cavity to
+  /// fill — the position lets a caller place a visual effect exactly where
+  /// the gap closed, rather than just knowing that *something* happened.
+  ({int row, int col})? fillLowestCavity({
     required Color Function(TriHalf fillTri, Color existing) colorForFill,
   }) {
     for (int row = config.rows - 1; row >= 0; row--) {
       for (int col = 0; col < config.cols; col++) {
-        final cell = cells[row][col];
-        if (cell.full != null) continue;
-        final hasBl = cell.bl != null;
-        final hasTr = cell.tr != null;
-        if (hasBl == hasTr) continue;
-        final existing = hasBl ? cell.bl! : cell.tr!;
-        final fillTri = hasBl ? TriHalf.tr : TriHalf.bl;
-        final color = colorForFill(fillTri, existing);
-        if (hasBl) {
-          cell.tr = color;
-        } else {
-          cell.bl = color;
-        }
-        revision++;
-        return true;
+        if (_fillCavityCell(row, col, colorForFill))
+          return (row: row, col: col);
       }
     }
-    return false;
+    return null;
+  }
+
+  /// Same as [fillLowestCavity], but targets one specific cell instead of
+  /// scanning for the lowest one — the tap-to-fill gesture control scheme
+  /// lets a player aim at exactly the gap they mean, rather than always
+  /// getting whichever cavity happens to be lowest.
+  bool fillCavityAt(
+    int row,
+    int col, {
+    required Color Function(TriHalf fillTri, Color existing) colorForFill,
+  }) {
+    if (row < 0 || row >= config.rows || col < 0 || col >= config.cols) {
+      return false;
+    }
+    return _fillCavityCell(row, col, colorForFill);
+  }
+
+  bool _fillCavityCell(
+    int row,
+    int col,
+    Color Function(TriHalf fillTri, Color existing) colorForFill,
+  ) {
+    final cell = cells[row][col];
+    if (cell.full != null) return false;
+    final hasBl = cell.bl != null;
+    final hasTr = cell.tr != null;
+    if (hasBl == hasTr) return false;
+    final existing = hasBl ? cell.bl! : cell.tr!;
+    final fillTri = hasBl ? TriHalf.tr : TriHalf.bl;
+    final color = colorForFill(fillTri, existing);
+    if (hasBl) {
+      cell.tr = color;
+    } else {
+      cell.bl = color;
+    }
+    revision++;
+    return true;
   }
 
   List<int> detectFullRows() => [

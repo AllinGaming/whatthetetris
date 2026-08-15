@@ -17,7 +17,6 @@ class FusionHero extends StatefulWidget {
     required this.colorB,
     this.size = 96,
     this.reduceMotion = false,
-    this.interactive = false,
   });
 
   final Color colorA;
@@ -29,12 +28,6 @@ class FusionHero extends StatefulWidget {
   /// addition to, the OS-level `MediaQuery.disableAnimations` flag, since a
   /// player can turn one on without the other.
   final bool reduceMotion;
-
-  /// True for the tutorial's Fusion page: plays once per tap instead of
-  /// looping forever, so the player triggers the fusion themselves rather
-  /// than just watching it happen. The start-screen title hero leaves this
-  /// false — it's ambient decoration, not something to "try."
-  final bool interactive;
 
   @override
   State<FusionHero> createState() => _FusionHeroState();
@@ -61,18 +54,12 @@ class _FusionHeroState extends State<FusionHero>
       _started = true;
       if (_skipMotion) {
         _controller.value = 0.7; // a static resting "fused" frame
-      } else if (widget.interactive) {
-        _controller.value = 0; // waits for a tap instead of auto-playing
       } else {
         _controller.repeat();
       }
     }
-    // Only the ambient (non-interactive) start-screen hero loops forever on
-    // its own — pause/resume it with its route so it doesn't keep ticking
-    // (and burning CPU/battery) once buried under a pushed game/settings
-    // screen. The interactive tutorial instance never auto-repeats, so it
-    // has nothing to pause.
-    if (widget.interactive) return;
+    // Pause/resume with its route so it doesn't keep ticking (and burning
+    // CPU/battery) once buried under a pushed game/settings screen.
     final route = ModalRoute.of(context);
     if (route is PageRoute && route != _subscribedRoute) {
       if (_subscribedRoute != null) appRouteObserver.unsubscribe(this);
@@ -87,16 +74,6 @@ class _FusionHeroState extends State<FusionHero>
   @override
   void didPopNext() {
     if (!_skipMotion) _controller.repeat();
-  }
-
-  void _replay() {
-    if (_skipMotion || _controller.isAnimating) return;
-    _controller.value = 0;
-    _controller.animateTo(
-      0.7,
-      duration: const Duration(milliseconds: 1400),
-      curve: Curves.easeOut,
-    );
   }
 
   @override
@@ -124,25 +101,7 @@ class _FusionHeroState extends State<FusionHero>
         ),
       ),
     );
-    if (!widget.interactive) return visual;
-    return GestureDetector(
-      onTap: _replay,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          visual,
-          const SizedBox(height: 8),
-          Text(
-            'Tap to fuse',
-            style: TextStyle(
-              color: widget.colorA.withValues(alpha: 0.8),
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
+    return visual;
   }
 }
 

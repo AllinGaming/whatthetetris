@@ -421,7 +421,13 @@ class _PulsingGlowState extends State<_PulsingGlow>
   @override
   void initState() {
     super.initState();
-    if (widget.enabled) _ctrl.repeat(reverse: true);
+    // Forces _ctrl's lazy construction now, while safely mounted. Without
+    // this, a glow that's created disabled and never becomes enabled
+    // before this widget is removed would leave `dispose()` as the very
+    // first thing to touch `_ctrl` -- by which point the element tree is
+    // unmounting and looking up TickerMode's ancestor is unsafe.
+    final ctrl = _ctrl;
+    if (widget.enabled) ctrl.repeat(reverse: true);
   }
 
   @override

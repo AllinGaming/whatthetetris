@@ -11,7 +11,6 @@ import '../services/settings_service.dart';
 import '../services/theme_service.dart';
 import 'widgets/menu_backdrop.dart';
 import 'widgets/neon_text.dart';
-import 'widgets/tutorial_overlay.dart';
 
 /// Volume/mute, appearance, and accessibility toggles (docs/GDD.md SS6.5,
 /// SS7-SS8). Reachable from the start screen so players never have to be
@@ -62,27 +61,12 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Future<void> _showTutorial(BuildContext context) async {
-    var finishedAll = false;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => TutorialOverlay(
-        reduceMotion: settings.reduceMotion,
-        onDone: () {
-          finishedAll = true;
-          Navigator.of(dialogContext).pop();
-        },
-        onSkip: () => Navigator.of(dialogContext).pop(),
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TutorialLevelScreen(settings: settings),
       ),
     );
     unawaited(settings.setHasSeenTutorial(true));
-    // Only players who actually finish the walkthrough (not Skip) go on to
-    // the hands-on level.
-    if (finishedAll && context.mounted) {
-      await Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => const TutorialLevelScreen()));
-    }
   }
 
   @override
@@ -107,205 +91,252 @@ class SettingsScreen extends StatelessWidget {
               theme: theme.current,
               reduceMotion: settings.reduceMotion,
             ),
+            // SingleChildScrollView outside Center (not the other way
+            // around) so its hit-testable width is the full screen --
+            // otherwise it only sizes itself to its centered, width-capped
+            // content, leaving dead margins on wider screens where a drag
+            // silently does nothing instead of scrolling.
             SafeArea(
               bottom: false,
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 480),
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 36),
-                    children: [
-                      _SettingsCard(
-                        label: 'Help',
-                        accent: accent,
+              child: SingleChildScrollView(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 480),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 36),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: const Icon(
-                              Icons.school_outlined,
-                              color: Colors.white54,
-                            ),
-                            title: const Text('How to Play'),
-                            subtitle: const Text(
-                              'Replay the onboarding walkthrough any time',
-                            ),
-                            trailing: const Icon(
-                              Icons.chevron_right,
-                              color: Colors.white38,
-                            ),
-                            onTap: () => _showTutorial(context),
-                          ),
-                        ],
-                      ),
-                      _SettingsCard(
-                        label: 'Appearance',
-                        accent: accent,
-                        children: [
-                          Wrap(
-                            spacing: 12,
-                            runSpacing: 12,
+                          _SettingsCard(
+                            label: 'Help',
+                            accent: accent,
                             children: [
-                              for (final palette in ThemePalette.all)
-                                _ThemeSwatch(
-                                  palette: palette,
-                                  selected: theme.current.id == palette.id,
-                                  onTap: () =>
-                                      unawaited(theme.setTheme(palette.id)),
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(
+                                  Icons.school_outlined,
+                                  color: Colors.white54,
                                 ),
+                                title: const Text('How to Play'),
+                                subtitle: const Text(
+                                  'Replay the onboarding walkthrough any time',
+                                ),
+                                trailing: const Icon(
+                                  Icons.chevron_right,
+                                  color: Colors.white38,
+                                ),
+                                onTap: () => _showTutorial(context),
+                              ),
                             ],
                           ),
+                          _SettingsCard(
+                            label: 'Appearance',
+                            accent: accent,
+                            children: [
+                              Wrap(
+                                spacing: 12,
+                                runSpacing: 12,
+                                children: [
+                                  for (final palette in ThemePalette.all)
+                                    _ThemeSwatch(
+                                      palette: palette,
+                                      selected: theme.current.id == palette.id,
+                                      onTap: () =>
+                                          unawaited(theme.setTheme(palette.id)),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          _SettingsCard(
+                            label: 'Audio',
+                            accent: accent,
+                            children: [
+                              SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                secondary: const Icon(
+                                  Icons.volume_off,
+                                  color: Colors.white54,
+                                ),
+                                title: const Text('Mute all audio'),
+                                value: audio.muted,
+                                onChanged: (v) => unawaited(audio.setMuted(v)),
+                              ),
+                              _SliderRow(
+                                icon: Icons.music_note,
+                                title: 'Music volume',
+                                value: audio.musicVolume,
+                                accent: accent,
+                                onChanged: audio.muted
+                                    ? null
+                                    : (v) => unawaited(audio.setMusicVolume(v)),
+                              ),
+                              _SliderRow(
+                                icon: Icons.graphic_eq,
+                                title: 'Sound effects volume',
+                                value: audio.sfxVolume,
+                                accent: accent,
+                                onChanged: audio.muted
+                                    ? null
+                                    : (v) => unawaited(audio.setSfxVolume(v)),
+                              ),
+                            ],
+                          ),
+                          _SettingsCard(
+                            label: 'Accessibility',
+                            accent: accent,
+                            children: [
+                              SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                secondary: const Icon(
+                                  Icons.motion_photos_off,
+                                  color: Colors.white54,
+                                ),
+                                title: const Text('Reduce motion'),
+                                subtitle: const Text(
+                                  'Softens screen shake and thins out particle bursts',
+                                ),
+                                value: settings.reduceMotion,
+                                onChanged: (v) =>
+                                    unawaited(settings.setReduceMotion(v)),
+                              ),
+                              SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                secondary: const Icon(
+                                  Icons.vibration,
+                                  color: Colors.white54,
+                                ),
+                                title: const Text('Haptics'),
+                                subtitle: const Text(
+                                  'Vibration feedback on key actions',
+                                ),
+                                value: settings.hapticsEnabled,
+                                onChanged: (v) =>
+                                    unawaited(settings.setHapticsEnabled(v)),
+                              ),
+                              _SliderRow(
+                                icon: Icons.text_fields,
+                                title: 'Text & UI size',
+                                value: settings.uiScale,
+                                min: 0.85,
+                                max: 1.3,
+                                divisions: 3,
+                                accent: accent,
+                                onChanged: (v) =>
+                                    unawaited(settings.setUiScale(v)),
+                              ),
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(
+                                  Icons.touch_app,
+                                  color: Colors.white54,
+                                ),
+                                title: const Text('Touch controls'),
+                                subtitle: const Text(
+                                  'Cluster mobile controls toward one thumb',
+                                ),
+                                trailing: DropdownButton<TouchHandedness>(
+                                  value: settings.touchHandedness,
+                                  onChanged: (v) {
+                                    if (v != null) {
+                                      unawaited(settings.setTouchHandedness(v));
+                                    }
+                                  },
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: TouchHandedness.balanced,
+                                      child: Text('Balanced'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: TouchHandedness.left,
+                                      child: Text('Left-handed'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: TouchHandedness.right,
+                                      child: Text('Right-handed'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(
+                                  Icons.gesture,
+                                  color: Colors.white54,
+                                ),
+                                title: const Text('Control scheme'),
+                                subtitle: const Text(
+                                  'Gestures replaces the on-screen buttons: '
+                                  'swipe to move, tap to mirror (or fill a '
+                                  'tapped cavity), double-tap to hard drop, '
+                                  'swipe up to rotate, long-press to hold',
+                                ),
+                                trailing: DropdownButton<TouchControlScheme>(
+                                  value: settings.touchControlScheme,
+                                  onChanged: (v) {
+                                    if (v != null) {
+                                      unawaited(
+                                        settings.setTouchControlScheme(v),
+                                      );
+                                    }
+                                  },
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: TouchControlScheme.buttons,
+                                      child: Text('Buttons'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: TouchControlScheme.gestures,
+                                      child: Text('Gestures'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(
+                                  Icons.palette,
+                                  color: Colors.white54,
+                                ),
+                                title: const Text('Piece colors'),
+                                subtitle: const Text(
+                                  'Duo signals each triangle half; Random is '
+                                  'much harder to read',
+                                ),
+                                trailing: DropdownButton<PieceColorMode>(
+                                  value: settings.pieceColorMode,
+                                  onChanged: (v) {
+                                    if (v == null) return;
+                                    if (v == PieceColorMode.random) {
+                                      unawaited(
+                                        _confirmRandomColorMode(context),
+                                      );
+                                    } else {
+                                      unawaited(settings.setPieceColorMode(v));
+                                    }
+                                  },
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: PieceColorMode.duo,
+                                      child: Text('Duo (Recommended)'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: PieceColorMode.random,
+                                      child: Text('Random (hardest)'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          _SettingsCard(
+                            label: 'Cloud Backup',
+                            accent: accent,
+                            children: [_CloudBackupSection(live: live)],
+                          ),
                         ],
                       ),
-                      _SettingsCard(
-                        label: 'Audio',
-                        accent: accent,
-                        children: [
-                          SwitchListTile(
-                            contentPadding: EdgeInsets.zero,
-                            secondary: const Icon(
-                              Icons.volume_off,
-                              color: Colors.white54,
-                            ),
-                            title: const Text('Mute all audio'),
-                            value: audio.muted,
-                            onChanged: (v) => unawaited(audio.setMuted(v)),
-                          ),
-                          _SliderRow(
-                            icon: Icons.music_note,
-                            title: 'Music volume',
-                            value: audio.musicVolume,
-                            accent: accent,
-                            onChanged: audio.muted
-                                ? null
-                                : (v) => unawaited(audio.setMusicVolume(v)),
-                          ),
-                          _SliderRow(
-                            icon: Icons.graphic_eq,
-                            title: 'Sound effects volume',
-                            value: audio.sfxVolume,
-                            accent: accent,
-                            onChanged: audio.muted
-                                ? null
-                                : (v) => unawaited(audio.setSfxVolume(v)),
-                          ),
-                        ],
-                      ),
-                      _SettingsCard(
-                        label: 'Accessibility',
-                        accent: accent,
-                        children: [
-                          SwitchListTile(
-                            contentPadding: EdgeInsets.zero,
-                            secondary: const Icon(
-                              Icons.motion_photos_off,
-                              color: Colors.white54,
-                            ),
-                            title: const Text('Reduce motion'),
-                            subtitle: const Text(
-                              'Softens screen shake and thins out particle bursts',
-                            ),
-                            value: settings.reduceMotion,
-                            onChanged: (v) =>
-                                unawaited(settings.setReduceMotion(v)),
-                          ),
-                          SwitchListTile(
-                            contentPadding: EdgeInsets.zero,
-                            secondary: const Icon(
-                              Icons.vibration,
-                              color: Colors.white54,
-                            ),
-                            title: const Text('Haptics'),
-                            subtitle: const Text(
-                              'Vibration feedback on key actions',
-                            ),
-                            value: settings.hapticsEnabled,
-                            onChanged: (v) =>
-                                unawaited(settings.setHapticsEnabled(v)),
-                          ),
-                          _SliderRow(
-                            icon: Icons.text_fields,
-                            title: 'Text & UI size',
-                            value: settings.uiScale,
-                            min: 0.85,
-                            max: 1.3,
-                            divisions: 3,
-                            accent: accent,
-                            onChanged: (v) => unawaited(settings.setUiScale(v)),
-                          ),
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: const Icon(
-                              Icons.touch_app,
-                              color: Colors.white54,
-                            ),
-                            title: const Text('Touch controls'),
-                            subtitle: const Text(
-                              'Cluster mobile controls toward one thumb',
-                            ),
-                            trailing: DropdownButton<TouchHandedness>(
-                              value: settings.touchHandedness,
-                              onChanged: (v) {
-                                if (v != null) {
-                                  unawaited(settings.setTouchHandedness(v));
-                                }
-                              },
-                              items: const [
-                                DropdownMenuItem(
-                                  value: TouchHandedness.balanced,
-                                  child: Text('Balanced'),
-                                ),
-                                DropdownMenuItem(
-                                  value: TouchHandedness.left,
-                                  child: Text('Left-handed'),
-                                ),
-                                DropdownMenuItem(
-                                  value: TouchHandedness.right,
-                                  child: Text('Right-handed'),
-                                ),
-                              ],
-                            ),
-                          ),
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: const Icon(
-                              Icons.palette,
-                              color: Colors.white54,
-                            ),
-                            title: const Text('Piece colors'),
-                            subtitle: const Text(
-                              'Duo signals each triangle half; Random is '
-                              'much harder to read',
-                            ),
-                            trailing: DropdownButton<PieceColorMode>(
-                              value: settings.pieceColorMode,
-                              onChanged: (v) {
-                                if (v == null) return;
-                                if (v == PieceColorMode.random) {
-                                  unawaited(_confirmRandomColorMode(context));
-                                } else {
-                                  unawaited(settings.setPieceColorMode(v));
-                                }
-                              },
-                              items: const [
-                                DropdownMenuItem(
-                                  value: PieceColorMode.duo,
-                                  child: Text('Duo (Recommended)'),
-                                ),
-                                DropdownMenuItem(
-                                  value: PieceColorMode.random,
-                                  child: Text('Random (hardest)'),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      _SettingsCard(
-                        label: 'Cloud Backup',
-                        accent: accent,
-                        children: [_CloudBackupSection(live: live)],
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),

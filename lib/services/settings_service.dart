@@ -16,6 +16,22 @@ enum TouchHandedness {
   );
 }
 
+/// How touch input drives the board. [buttons] is the default on-screen
+/// D-pad/action-button cluster; [gestures] hides it in favor of swipe/tap
+/// directly on the board (move by dragging, mirror on tap, hard drop on
+/// double-tap, rotate on an upward swipe, hold on long-press, and tapping a
+/// half-filled cell fills that specific cavity) — a leaner, one-handed feel
+/// for players who find the button cluster fiddly.
+enum TouchControlScheme {
+  buttons,
+  gestures;
+
+  static TouchControlScheme fromName(String? name) => values.firstWhere(
+    (v) => v.name == name,
+    orElse: () => TouchControlScheme.buttons,
+  );
+}
+
 /// Accessibility/feel toggles that are independent of audio (docs/GDD.md SS8).
 class SettingsService extends ChangeNotifier {
   SettingsService(this._prefs);
@@ -24,6 +40,7 @@ class SettingsService extends ChangeNotifier {
   static const _keyHapticsEnabled = 'settings_haptics_enabled';
   static const _keyUiScale = 'settings_ui_scale';
   static const _keyTouchHandedness = 'settings_touch_handedness';
+  static const _keyTouchControlScheme = 'settings_touch_control_scheme';
   static const _keySeenTutorial = 'settings_seen_tutorial';
   static const _keyPieceColorMode = 'settings_piece_color_mode';
 
@@ -41,6 +58,9 @@ class SettingsService extends ChangeNotifier {
 
   TouchHandedness get touchHandedness =>
       TouchHandedness.fromName(_prefs.getString(_keyTouchHandedness));
+
+  TouchControlScheme get touchControlScheme =>
+      TouchControlScheme.fromName(_prefs.getString(_keyTouchControlScheme));
 
   PieceColorMode get pieceColorMode =>
       PieceColorMode.fromName(_prefs.getString(_keyPieceColorMode));
@@ -66,6 +86,11 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setTouchHandedness(TouchHandedness value) async {
     await _prefs.setString(_keyTouchHandedness, value.name);
+    notifyListeners();
+  }
+
+  Future<void> setTouchControlScheme(TouchControlScheme value) async {
+    await _prefs.setString(_keyTouchControlScheme, value.name);
     notifyListeners();
   }
 

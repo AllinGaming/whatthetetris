@@ -25,7 +25,6 @@ import '../ui/widgets/floating_toast.dart';
 import '../ui/widgets/pause_menu.dart';
 import '../ui/widgets/results_screen.dart';
 import '../ui/widgets/touch_dpad.dart';
-import '../ui/widgets/tutorial_overlay.dart';
 import 'board_painter.dart';
 import 'game_animations.dart';
 import 'game_board.dart';
@@ -67,6 +66,7 @@ class _GameScreenState extends State<GameScreen>
 
   late final GameAnimations _anim = GameAnimations(vsync: this)
     ..reduceMotion = widget.settings.reduceMotion;
+  final _boardStaticCache = BoardStaticCache();
 
   Config get _config => Config(cols: cfg.cols);
 
@@ -201,28 +201,12 @@ class _GameScreenState extends State<GameScreen>
   Future<void> _showTutorial() async {
     if (!mounted) return;
     _setPaused(true);
-    var finishedAll = false;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => TutorialOverlay(
-        reduceMotion: widget.settings.reduceMotion,
-        onDone: () {
-          finishedAll = true;
-          Navigator.of(dialogContext).pop();
-        },
-        onSkip: () => Navigator.of(dialogContext).pop(),
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TutorialLevelScreen(settings: widget.settings),
       ),
     );
     unawaited(widget.settings.setHasSeenTutorial(true));
-    // Only players who actually finish the walkthrough (not Skip) go on to
-    // the hands-on level -- practice on real controls/mechanics before a
-    // real run starts.
-    if (finishedAll && mounted) {
-      await Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => const TutorialLevelScreen()));
-    }
     if (mounted) _setPaused(false);
   }
 
@@ -250,6 +234,11 @@ class _GameScreenState extends State<GameScreen>
 
   void _onSettingsChanged() {
     _anim.reduceMotion = widget.settings.reduceMotion;
+    // Covers touchControlScheme/touchHandedness (and anything else here)
+    // changing while this screen is already open (e.g. via the pause
+    // menu's Settings button) -- without this, the D-pad/board gesture
+    // wiring wouldn't refresh until something else happened to rebuild.
+    if (mounted) setState(() {});
   }
 
   void _onThemeChanged() {
@@ -444,50 +433,77 @@ class _GameScreenState extends State<GameScreen>
 
   int _scaledScore(int base) => (base * _scoreMultiplier).round();
 
+  Color _cavityFillColor(TriHalf fillTri, Color existing) => resolveCellColor(
+    mode: widget.settings.pieceColorMode,
+    themedColor: existing,
+    kind: CellKind.tri,
+    tri: fillTri,
+  );
+
   void _fillCavities() {
     if (!_canAcceptInput || !cfg.hasCavityFiller || _cavityCharges <= 0) {
       return;
     }
-    if (_board.fillLowestCavity(
-      colorForFill: (fillTri, existing) => resolveCellColor(
-        mode: widget.settings.pieceColorMode,
-        themedColor: existing,
-        kind: CellKind.tri,
-        tri: fillTri,
-      ),
-    )) {
-      _recordInput(ReplayInputType.cavityFill);
-      _cavityCharges--;
-      _runCavityFills++;
-      unawaited(widget.audio.play(Sfx.cavityFill));
-      unawaited(widget.live.analytics.cavityFillUsed());
-      final cleared = _detectFullRows();
-      if (cleared.isNotEmpty) {
-        _collapseRows(cleared);
-        final points = _scaledScore(_pointsForLines(cleared.length));
-        _score += points;
-        _lines += cleared.length;
-        _cavityCharges += cleared.length;
-        _combo++;
-        _reconcileActiveAfterBoardMutation();
-        _showToast('POWER CLEAR +$points', Colors.amberAccent);
-        unawaited(_haptic(HapticFeedback.mediumImpact));
-      }
-      _updateDanger();
-      if (cfg.lineTarget != null && _lines >= cfg.lineTarget!) {
-        _endGame();
-        setState(() {});
-        return;
-      }
-      if (cfg.endCondition == EndCondition.boardCleared && _board.isEmpty) {
-        _challengeCleared = true;
-        _endGame();
-        setState(() {});
-        return;
-      }
-      _restartTimer();
-      setState(() {});
+    final filled = _board.fillLowestCavity(colorForFill: _cavityFillColor);
+    if (filled != null) _onCavityFilled(filled.row, filled.col);
+  }
+
+  /// The gesture control scheme's tap-to-fill: same charge/rules as
+  /// [_fillCavities], just aimed at a specific cell instead of always the
+  /// board's lowest cavity (see [TouchControlScheme.gestures]).
+  void _fillCavityAt(int row, int col) {
+    if (!_canAcceptInput || !cfg.hasCavityFiller || _cavityCharges <= 0) {
+      return;
     }
+    if (_board.fillCavityAt(row, col, colorForFill: _cavityFillColor)) {
+      _onCavityFilled(row, col);
+    }
+  }
+
+  /// Shared consequences of any successful cavity fill, however it was
+  /// triggered — split out of [_fillCavities] so [_fillCavityAt] doesn't
+  /// duplicate the scoring/line-clear/end-condition logic.
+  void _onCavityFilled(int row, int col) {
+    _recordInput(ReplayInputType.cavityFill);
+    _cavityCharges--;
+    _runCavityFills++;
+    unawaited(widget.audio.play(Sfx.cavityFill));
+    unawaited(widget.live.analytics.cavityFillUsed());
+    // A quick sparkle right where the gap just closed — previously the
+    // only feedback was the SFX (plus an incidental clear flash, only if
+    // this fill happened to also complete a row).
+    final filledCell = _board.cells[row][col];
+    _anim.burst(
+      Offset(col + 0.5, row + 0.5),
+      filledCell.bl ?? filledCell.tr!,
+      count: 6,
+    );
+    final cleared = _detectFullRows();
+    if (cleared.isNotEmpty) {
+      _collapseRows(cleared);
+      final points = _scaledScore(_pointsForLines(cleared.length));
+      _score += points;
+      _lines += cleared.length;
+      _cavityCharges += cleared.length;
+      _combo++;
+      _reconcileActiveAfterBoardMutation();
+      _showToast('POWER CLEAR +$points', Colors.amberAccent);
+      unawaited(_haptic(HapticFeedback.mediumImpact));
+    }
+    _updateDanger();
+    if (cfg.lineTarget != null && _lines >= cfg.lineTarget!) {
+      _endGame();
+      setState(() {});
+      return;
+    }
+    if (cfg.endCondition == EndCondition.boardCleared && _board.isEmpty) {
+      _challengeCleared = true;
+      _endGame();
+      setState(() {});
+      return;
+    }
+    _restartTimer();
+    setState(() {});
   }
 
   void _speedUp() {
@@ -915,10 +931,29 @@ class _GameScreenState extends State<GameScreen>
       _lastMirrored = toggled.mirrored;
       _recordInput(ReplayInputType.mirror);
       _runMirrorUses++;
-      unawaited(_haptic(HapticFeedback.selectionClick));
+      unawaited(_haptic(HapticFeedback.mediumImpact));
       unawaited(widget.audio.play(Sfx.mirror));
       unawaited(widget.live.analytics.mirrorUsed());
+      // A quick sparkle + ring at the piece — Mirror is this game's
+      // signature move (docs/GDD.md SS4.1), and used to have no visual
+      // flair of its own beyond the shape silently flipping.
+      final origin = _pieceCenter(toggled);
+      _anim.burst(
+        origin,
+        _resolveThemedColor(toggled.type, _activeColor),
+        count: 7,
+      );
+      _anim.triggerImpactRing(origin);
     }
+  }
+
+  /// Approximate on-board center of a piece, in the same (col, row) + 0.5
+  /// grid-unit space [GameAnimations.burst]/[triggerImpactRing] expect.
+  Offset _pieceCenter(ActivePiece piece) {
+    final cells = piece.cellsOnBoard();
+    final col = cells.map((c) => c.col).reduce((a, b) => a + b) / cells.length;
+    final row = cells.map((c) => c.row).reduce((a, b) => a + b) / cells.length;
+    return Offset(col + 0.5, row + 0.5);
   }
 
   bool _tryMove({int dx = 0, int dy = 0}) {
@@ -1001,6 +1036,7 @@ class _GameScreenState extends State<GameScreen>
     _recordInput(ReplayInputType.hold);
     final outgoing = _active!.type;
     final outgoingColor = _activeColor;
+    final outgoingOrigin = _pieceCenter(_active!);
     final incoming = _held;
     final incomingColor = _heldColor;
     _held = outgoing;
@@ -1012,8 +1048,16 @@ class _GameScreenState extends State<GameScreen>
       forcedColor: incomingColor,
       resetHold: false,
     );
-    unawaited(_haptic(HapticFeedback.selectionClick));
+    unawaited(_haptic(HapticFeedback.mediumImpact));
     unawaited(widget.audio.play(Sfx.move));
+    // A quick sparkle where the piece was, marking the swap — Hold used to
+    // be a silent, invisible state change beyond the side panel's "Held"
+    // slot quietly updating.
+    _anim.burst(
+      outgoingOrigin,
+      _resolveThemedColor(outgoing, outgoingColor),
+      count: 6,
+    );
     setState(() {});
   }
 
@@ -1058,15 +1102,62 @@ class _GameScreenState extends State<GameScreen>
   // (locked to whichever axis the drag started in, so a horizontal slide
   // can't also register as a soft drop), drag down to soft-drop, and a
   // fast downward fling hard-drops instead. Tap rotates, long-press holds.
+  // Under [TouchControlScheme.gestures] (see _handleBoardTap/_onBoardPanEnd)
+  // tap and the vertical-fling meaning both change instead, since that
+  // scheme repurposes tap for Mirror and adds an upward swipe for rotate.
   // All the actual actions below are self-guarded by [_canAcceptInput], so
   // these handlers can call them unconditionally, same as [_handleKey].
   static const double _dragLockThreshold = 8.0;
   static const double _hardDropFlingVelocity = 1200.0;
+  static const double _rotateSwipeVelocity = 700.0;
 
   double _cellSize = 1;
   double _dragDx = 0;
   double _dragDy = 0;
   bool? _dragHorizontal;
+
+  bool get _gestureScheme =>
+      widget.settings.touchControlScheme == TouchControlScheme.gestures;
+
+  /// The board cell under a local tap position, or null if it fell outside
+  /// the board -- [_cellSize] is kept in sync with the board's actual
+  /// on-screen size by [_buildBoard]'s LayoutBuilder, and since the board is
+  /// wrapped in an aspect-ratio-locked container matching [_config]'s
+  /// rows/cols exactly, a single cell size is enough to convert both axes
+  /// (no separate row height, unlike [BoardPainter]'s more general rectFor).
+  (int, int)? _cellAt(Offset localPosition) {
+    if (_cellSize <= 0) return null;
+    final row = (localPosition.dy / _cellSize).floor();
+    final col = (localPosition.dx / _cellSize).floor();
+    if (row < 0 || row >= _config.rows || col < 0 || col >= _config.cols) {
+      return null;
+    }
+    return (row, col);
+  }
+
+  bool _isCavityCell(int row, int col) {
+    final cell = _board.cells[row][col];
+    if (cell.full != null) return false;
+    return (cell.bl != null) != (cell.tr != null);
+  }
+
+  /// The board tap action: rotates under [TouchControlScheme.buttons]
+  /// (unchanged default), but under [TouchControlScheme.gestures] a tap
+  /// mirrors instead -- unless it lands on a cell that's a cavity (exactly
+  /// one triangle half already filled), in which case it fills that
+  /// specific cavity instead (same charge cost as pressing G).
+  void _handleBoardTap(Offset localPosition) {
+    if (!_gestureScheme) {
+      _rotateRight();
+      return;
+    }
+    final cell = _cellAt(localPosition);
+    if (cell != null && _isCavityCell(cell.$1, cell.$2)) {
+      _fillCavityAt(cell.$1, cell.$2);
+      return;
+    }
+    _mirrorActive();
+  }
 
   void _onBoardPanStart(DragStartDetails details) {
     _dragDx = 0;
@@ -1103,9 +1194,13 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _onBoardPanEnd(DragEndDetails details) {
-    if (_dragHorizontal == false &&
-        details.velocity.pixelsPerSecond.dy > _hardDropFlingVelocity) {
-      _hardDrop();
+    if (_dragHorizontal == false) {
+      final dy = details.velocity.pixelsPerSecond.dy;
+      if (dy > _hardDropFlingVelocity) {
+        _hardDrop();
+      } else if (_gestureScheme && dy < -_rotateSwipeVelocity) {
+        _rotateRight();
+      }
     }
     _dragDx = 0;
     _dragDy = 0;
@@ -1378,7 +1473,7 @@ class _GameScreenState extends State<GameScreen>
 
   static const double _mobileBreakpoint = 600;
 
-  Widget _buildBoard(BuildContext context) {
+  Widget _buildBoard(BuildContext context, {bool showGestureHud = false}) {
     final accent = Theme.of(context).colorScheme.primary;
     return Center(
       child: AspectRatio(
@@ -1393,7 +1488,13 @@ class _GameScreenState extends State<GameScreen>
                 children: [
                   Positioned.fill(
                     child: GestureDetector(
-                      onTap: _rotateRight,
+                      onTapUp: (details) =>
+                          _handleBoardTap(details.localPosition),
+                      // Only wired under the gestures scheme -- adding it
+                      // unconditionally would make Flutter wait out the
+                      // double-tap timeout before ever firing a plain tap,
+                      // adding input lag to the default scheme's rotate.
+                      onDoubleTap: _gestureScheme ? _hardDrop : null,
                       onLongPress: _holdActive,
                       onPanStart: _onBoardPanStart,
                       onPanUpdate: _onBoardPanUpdate,
@@ -1451,6 +1552,7 @@ class _GameScreenState extends State<GameScreen>
                                       _active!.type,
                                       _activeColor,
                                     ),
+                              staticCache: _boardStaticCache,
                             ),
                           ),
                         ),
@@ -1467,11 +1569,44 @@ class _GameScreenState extends State<GameScreen>
                   if (_showingCountdown) _buildCountdownOverlay(accent),
                   if (_state == GameState.paused && !_showingCountdown)
                     _buildPauseMenu(),
+                  // The gesture scheme hides the D-pad (see
+                  // _buildMobileLayout), which is where both the menu button
+                  // and the cavity-charge count normally live -- put them
+                  // back in opposite top corners so neither disappears.
+                  if (showGestureHud && _gestureScheme)
+                    _buildGestureHud(accent),
                 ],
               );
             },
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildGestureHud(Color accent) {
+    return Positioned(
+      top: 8,
+      left: 8,
+      right: 8,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _HudButton(
+            icon: Icons.menu,
+            accent: accent,
+            onPressed: () {
+              unawaited(widget.audio.play(Sfx.menuTap));
+              _togglePause();
+            },
+          ),
+          if (cfg.hasCavityFiller)
+            _HudBadge(
+              icon: Icons.auto_fix_high,
+              value: '$_cavityCharges',
+              accent: accent,
+            ),
+        ],
       ),
     );
   }
@@ -1591,7 +1726,7 @@ class _GameScreenState extends State<GameScreen>
     return SafeArea(
       child: Column(
         children: [
-          Expanded(child: _buildBoard(context)),
+          Expanded(child: _buildBoard(context, showGestureHud: true)),
           MobileStatsBar(
             state: _state,
             score: _score,
@@ -1613,24 +1748,29 @@ class _GameScreenState extends State<GameScreen>
             },
             onShare: _shareResult,
           ),
-          TouchDpad(
-            enabled: _state == GameState.playing && !_resolvingLock,
-            onMoveLeft: _moveLeft,
-            onMoveRight: _moveRight,
-            onSoftDrop: _softDrop,
-            onRotateLeft: _rotateLeft,
-            onRotateRight: _rotateRight,
-            onMirror: _mirrorActive,
-            onHold: _holdActive,
-            canHold: !_holdUsed,
-            onHardDrop: _hardDrop,
-            onFillCavities: cfg.hasCavityFiller ? _fillCavities : null,
-            cavityCharges: _cavityCharges,
-            onSpeedUp: cfg.hasManualSpeedBoost ? _speedUp : null,
-            speedBoost: _speedBoost,
-            reduceMotion: widget.settings.reduceMotion,
-            handedness: widget.settings.touchHandedness,
-          ),
+          // The gesture scheme plays entirely on the board itself (swipe to
+          // move, tap to mirror or fill a tapped cavity, double-tap to hard
+          // drop, swipe up to rotate, long-press to hold) -- the D-pad would
+          // just be redundant screen space taken from the board.
+          if (!_gestureScheme)
+            TouchDpad(
+              enabled: _state == GameState.playing && !_resolvingLock,
+              onMoveLeft: _moveLeft,
+              onMoveRight: _moveRight,
+              onSoftDrop: _softDrop,
+              onRotateLeft: _rotateLeft,
+              onRotateRight: _rotateRight,
+              onMirror: _mirrorActive,
+              onHold: _holdActive,
+              canHold: !_holdUsed,
+              onHardDrop: _hardDrop,
+              onFillCavities: cfg.hasCavityFiller ? _fillCavities : null,
+              cavityCharges: _cavityCharges,
+              onSpeedUp: cfg.hasManualSpeedBoost ? _speedUp : null,
+              speedBoost: _speedBoost,
+              reduceMotion: widget.settings.reduceMotion,
+              handedness: widget.settings.touchHandedness,
+            ),
         ],
       ),
     );
@@ -1649,6 +1789,83 @@ class _GameScreenState extends State<GameScreen>
                 ? _buildMobileLayout(context)
                 : _buildDesktopLayout(context, constraints);
           },
+        ),
+      ),
+    );
+  }
+}
+
+/// A small circular icon button for [_GameScreenState._buildGestureHud] --
+/// deliberately its own tiny widget rather than a bare [IconButton] so it
+/// gets a translucent backdrop, matching the mode-select toolbar's pill
+/// style closely enough to read as "the same kind of control."
+class _HudButton extends StatelessWidget {
+  const _HudButton({
+    required this.icon,
+    required this.accent,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final Color accent;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.4),
+        shape: BoxShape.circle,
+        border: Border.all(color: accent.withValues(alpha: 0.4)),
+      ),
+      child: IconButton(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 20, color: Colors.white),
+        tooltip: 'Menu',
+      ),
+    );
+  }
+}
+
+/// A small read-only pill showing an icon + count, for
+/// [_GameScreenState._buildGestureHud] — the cavity-charge counter that
+/// would otherwise disappear along with the hidden D-pad.
+class _HudBadge extends StatelessWidget {
+  const _HudBadge({
+    required this.icon,
+    required this.value,
+    required this.accent,
+  });
+
+  final IconData icon;
+  final String value;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Cavity fill charges: $value',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: accent.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: accent),
+            const SizedBox(width: 5),
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+          ],
         ),
       ),
     );
