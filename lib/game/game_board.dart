@@ -96,8 +96,9 @@ class GameBoard {
   }) {
     for (int row = config.rows - 1; row >= 0; row--) {
       for (int col = 0; col < config.cols; col++) {
-        if (_fillCavityCell(row, col, colorForFill))
+        if (_fillCavityCell(row, col, colorForFill)) {
           return (row: row, col: col);
+        }
       }
     }
     return null;
