@@ -149,6 +149,28 @@ class AudioService extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Pauses the music bed without forgetting the current track (unlike
+  /// [stopMusic]) -- meant for the app going into the background, where
+  /// nothing else would ever stop it otherwise (see [_HalfBlockPyramidApp]'s
+  /// lifecycle observer): the same continuous menu/gameplay track is by
+  /// design never interrupted by in-app navigation, but it has no business
+  /// still playing (and draining battery) while the app isn't in front.
+  Future<void> pauseMusic() async {
+    try {
+      await _musicPlayer.pause();
+    } catch (_) {}
+  }
+
+  /// Resumes music paused by [pauseMusic] -- a no-op if nothing was playing
+  /// to begin with (e.g. still muted, or before the first user gesture on
+  /// web unlocks autoplay).
+  Future<void> resumeMusic() async {
+    if (_currentTrack == null) return;
+    try {
+      await _musicPlayer.resume();
+    } catch (_) {}
+  }
+
   Future<void> play(Sfx sfx) async {
     if (muted || sfxVolume <= 0) return;
     final player = _sfxPool[_sfxPoolIndex];

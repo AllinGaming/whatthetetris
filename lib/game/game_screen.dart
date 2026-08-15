@@ -68,7 +68,7 @@ class _GameScreenState extends State<GameScreen>
     ..reduceMotion = widget.settings.reduceMotion;
   final _boardStaticCache = BoardStaticCache();
 
-  Config get _config => Config(cols: cfg.cols);
+  Config get _config => Config(rows: cfg.rows, cols: cfg.cols);
 
   late GameBoard _board;
   ActivePiece? _active;
@@ -290,6 +290,19 @@ class _GameScreenState extends State<GameScreen>
 
   void _startGame() {
     if (_finishingGame) return;
+    if (cfg.useDailySeed && widget.dailyChallenge.playedToday) {
+      // Reachable via the results dialog's "Play Again" (guarded against
+      // separately -- see ResultsScreen.onPlayAgain), the pause/play button,
+      // the restart button, and the Space shortcut, all of which are
+      // mode-agnostic controls that don't know Daily only allows one
+      // attempt a day. _startGame is the one place every one of those paths
+      // funnels through, so it's the one place that actually enforces the
+      // rule -- silently restarting would replay today's exact puzzle for
+      // nothing, since DailyChallengeService.recordResult no-ops for a day
+      // that's already recorded.
+      Navigator.of(context).maybePop();
+      return;
+    }
     _timer?.cancel();
     _lockTimer?.cancel();
     _clockTimer?.cancel();
@@ -853,10 +866,12 @@ class _GameScreenState extends State<GameScreen>
         mirrorUses: _runMirrorUses,
         cavityFills: _runCavityFills,
         newlyUnlocked: newlyUnlocked,
-        onPlayAgain: () {
-          Navigator.of(dialogContext).pop();
-          _startGame();
-        },
+        onPlayAgain: cfg.useDailySeed
+            ? null
+            : () {
+                Navigator.of(dialogContext).pop();
+                _startGame();
+              },
         onShare: () {
           Navigator.of(dialogContext).pop();
           unawaited(_shareResult());

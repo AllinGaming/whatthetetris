@@ -16,7 +16,7 @@ import 'board_painter.dart';
 import 'game_animations.dart';
 import 'game_board.dart';
 
-enum _Step { moveRotateDrop, mirror, fusion, hold, cavityFill, done }
+enum _Step { moveRotateDrop, fusion, hold, cavityFill, done }
 
 /// A real, playable mini board that teaches this game's mechanics by doing
 /// them. Deliberately consequence-free: no score, no stats, and — unlike
@@ -71,6 +71,7 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
   bool _readyToDrop = false;
   int _cavityCharges = 0;
   String? _successMessage;
+  String? _oopsMessage;
   Timer? _advanceTimer;
 
   @override
@@ -85,6 +86,20 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
     _anim.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  Future<void> _haptic(Future<void> Function() feedback) async {
+    if (!widget.settings.hapticsEnabled) return;
+    await feedback();
+  }
+
+  /// The active piece's on-screen center, in grid units -- where a burst or
+  /// impact ring for whatever it just did should originate.
+  Offset _pieceCenter(ActivePiece piece) {
+    final cells = piece.cellsOnBoard();
+    final col = cells.map((c) => c.col).reduce((a, b) => a + b) / cells.length;
+    final row = cells.map((c) => c.row).reduce((a, b) => a + b) / cells.length;
+    return Offset(col + 0.5, row + 0.5);
   }
 
   PieceDefinition _pieceNamed(String name) =>
@@ -117,8 +132,6 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
     switch (step) {
       case _Step.moveRotateDrop:
         _spawn(_pieceNamed('T4'));
-      case _Step.mirror:
-        _spawn(_pieceNamed('S4'));
       case _Step.fusion:
         // A full row of unfused halves rather than one exact target cell —
         // any mirrored piece dropped anywhere on it guarantees a fusion, so
@@ -188,6 +201,8 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
     final toggled = _active!.copyWith(mirrored: !_active!.mirrored);
     if (!_board.canPlace(toggled)) return;
     _active = toggled;
+    unawaited(_haptic(HapticFeedback.selectionClick));
+    _anim.burst(_pieceCenter(toggled), _theme.accent, count: 7);
     setState(() {});
   }
 
@@ -195,6 +210,8 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
     // Only wired during its own step -- a full swap-back model isn't needed
     // just to teach "press C to set a piece aside."
     if (_step != _Step.hold || _active == null) return;
+    unawaited(_haptic(HapticFeedback.mediumImpact));
+    _anim.burst(_pieceCenter(_active!), _theme.accent, count: 9);
     _active = null;
     setState(() {});
     _completeStep();
@@ -235,7 +252,7 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
       candidate = next;
     }
     final fusions = _board.countFusions(candidate);
-    final mirroredAtLock = candidate.mirrored;
+    final origin = _pieceCenter(candidate);
     _board.lock(
       candidate,
       colorForCell: (cell) => resolveCellColor(
@@ -246,21 +263,27 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
       ),
     );
     _anim.lockFlash.forward(from: 0);
+    _anim.triggerImpactRing(origin);
+    _anim.triggerShake(intensity: fusions > 0 ? 1.4 : 1.0);
+    unawaited(
+      _haptic(
+        fusions > 0 ? HapticFeedback.heavyImpact : HapticFeedback.mediumImpact,
+      ),
+    );
+    // A fusion is this game's whole hook -- worth a bigger, more colorful
+    // payoff than an ordinary lock, scaled up further per extra fusion.
+    if (fusions > 0) {
+      _anim.burst(origin, _theme.accent, count: 10 + fusions * 6);
+    }
     _active = null;
     setState(() {});
-    _onLocked(fusions: fusions, mirroredAtLock: mirroredAtLock);
+    _onLocked(fusions: fusions);
   }
 
-  void _onLocked({required int fusions, required bool mirroredAtLock}) {
+  void _onLocked({required int fusions}) {
     switch (_step) {
       case _Step.moveRotateDrop:
         _completeStep();
-      case _Step.mirror:
-        if (mirroredAtLock) {
-          _completeStep();
-        } else {
-          _setupStep(_Step.mirror);
-        }
       case _Step.fusion:
         if (fusions >= 1) {
           _completeStep();
@@ -268,6 +291,18 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
           _setupStep(_Step.fusion);
         }
       case _Step.hold:
+        // Dropping instead of holding would otherwise strand the player --
+        // no active piece left, and nothing in this step reacts to a lock --
+        // so nudge them and give them a fresh piece to actually hold.
+        _advanceTimer?.cancel();
+        setState(
+          () => _oopsMessage = 'Try Hold instead — that piece is gone now.',
+        );
+        _advanceTimer = Timer(const Duration(milliseconds: 1000), () {
+          if (!mounted) return;
+          _oopsMessage = null;
+          _setupStep(_Step.hold);
+        });
       case _Step.cavityFill:
       case _Step.done:
         break;
@@ -275,6 +310,12 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
   }
 
   void _completeStep() {
+    unawaited(_haptic(HapticFeedback.mediumImpact));
+    _anim.burst(
+      Offset(_config.cols / 2, _config.rows * 0.35),
+      _theme.accent,
+      count: 14,
+    );
     setState(() => _successMessage = 'Nice!');
     _advanceTimer?.cancel();
     _advanceTimer = Timer(const Duration(milliseconds: 700), () {
@@ -420,16 +461,155 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
 
   String get _instruction {
     if (_successMessage != null) return _successMessage!;
+    if (_oopsMessage != null) return _oopsMessage!;
     return switch (_step) {
       _Step.moveRotateDrop =>
         _readyToDrop ? 'Now drop it!' : 'Move it, then rotate it.',
-      _Step.mirror => "This piece won't fuse as-is — mirror it, then drop it.",
       _Step.fusion =>
         'Mirror it, then drop it anywhere on the bottom row to fuse it.',
       _Step.hold => 'Hold this piece for later.',
       _Step.cavityFill => 'Fill that stray gap.',
       _Step.done => "You're ready — go play!",
     };
+  }
+
+  /// What the player needs to do right now, spelled out as concrete inputs
+  /// rather than left implicit in the instruction text -- one entry per
+  /// distinct action (e.g. move-then-rotate is two entries, shown together).
+  List<_ActionHint> get _currentHints {
+    switch (_step) {
+      case _Step.moveRotateDrop:
+        if (!_readyToDrop) {
+          return const [
+            _ActionHint(
+              keys: ['←', '→'],
+              icon: Icons.swap_horiz,
+              label: 'Move',
+              gesture: _Gesture.dragHorizontal,
+            ),
+            _ActionHint(
+              keys: ['↑', 'Q'],
+              icon: Icons.rotate_right,
+              label: 'Rotate',
+              gesture: _Gesture.swipeUp,
+            ),
+          ];
+        }
+        return const [
+          _ActionHint(
+            keys: ['Space'],
+            icon: Icons.keyboard_double_arrow_down,
+            label: 'Drop',
+            gesture: _Gesture.doubleTap,
+          ),
+        ];
+      case _Step.fusion:
+        return const [
+          _ActionHint(
+            keys: ['M'],
+            icon: Icons.flip,
+            label: 'Mirror',
+            gesture: _Gesture.tapOnce,
+          ),
+          _ActionHint(
+            keys: ['Space'],
+            icon: Icons.keyboard_double_arrow_down,
+            label: 'Drop',
+            gesture: _Gesture.doubleTap,
+          ),
+        ];
+      case _Step.hold:
+        return const [
+          _ActionHint(
+            keys: ['C'],
+            icon: Icons.inventory_2_outlined,
+            label: 'Hold',
+            gesture: _Gesture.longPress,
+          ),
+        ];
+      case _Step.cavityFill:
+        return const [
+          _ActionHint(
+            keys: ['G'],
+            icon: Icons.auto_fix_high,
+            label: 'Fill',
+            gesture: _Gesture.tapOnce,
+          ),
+        ];
+      case _Step.done:
+        return const [];
+    }
+  }
+
+  /// Spells out exactly which key/button/gesture the current step needs --
+  /// a keyboard glyph on desktop, the matching D-pad icon (pulsing, so it's
+  /// easy to spot against the real pad below) under the buttons scheme, or a
+  /// small looping animation of the actual gesture under the gestures
+  /// scheme, since there's no pad to point at there.
+  Widget _buildControlHints(bool mobile) {
+    final hints = _currentHints;
+    if (hints.isEmpty) return const SizedBox.shrink();
+    final scheme = !mobile
+        ? _HintScheme.keyboard
+        : (_gestureScheme ? _HintScheme.gestures : _HintScheme.buttons);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 18,
+        runSpacing: 8,
+        children: [for (final hint in hints) _buildHintChip(hint, scheme)],
+      ),
+    );
+  }
+
+  Widget _buildHintChip(_ActionHint hint, _HintScheme scheme) {
+    final accent = _theme.accent;
+    final reduceMotion = widget.settings.reduceMotion;
+    return Column(
+      key: ValueKey('${_step.name}-${hint.label}'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        switch (scheme) {
+          _HintScheme.keyboard => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (int i = 0; i < hint.keys.length; i++) ...[
+                if (i > 0)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 3),
+                    child: Text(
+                      '/',
+                      style: TextStyle(color: Colors.white38, fontSize: 12),
+                    ),
+                  ),
+                _KeyCap(label: hint.keys[i], accent: accent),
+              ],
+            ],
+          ),
+          _HintScheme.buttons => _IconPulse(
+            icon: hint.icon,
+            accent: accent,
+            reduceMotion: reduceMotion,
+          ),
+          _HintScheme.gestures => _GestureGlyph(
+            gesture: hint.gesture,
+            accent: accent,
+            reduceMotion: reduceMotion,
+          ),
+        },
+        const SizedBox(height: 4),
+        Text(
+          hint.label,
+          style: const TextStyle(
+            color: Colors.white54,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.4,
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -454,15 +634,31 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
                     child: Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            _instruction,
-                            style: TextStyle(
-                              color: _successMessage != null
-                                  ? Colors.greenAccent
-                                  : Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                              shadows: neonShadows(accent, intensity: 0.5),
+                          child: TweenAnimationBuilder<double>(
+                            key: ValueKey(_instruction),
+                            tween: Tween(
+                              begin: _successMessage != null ? 1.3 : 1.0,
+                              end: 1.0,
+                            ),
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeOutBack,
+                            builder: (context, scale, child) => Transform.scale(
+                              alignment: Alignment.centerLeft,
+                              scale: scale,
+                              child: child,
+                            ),
+                            child: Text(
+                              _instruction,
+                              style: TextStyle(
+                                color: _successMessage != null
+                                    ? Colors.greenAccent
+                                    : _oopsMessage != null
+                                    ? Colors.orangeAccent
+                                    : Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                                shadows: neonShadows(accent, intensity: 0.5),
+                              ),
                             ),
                           ),
                         ),
@@ -473,6 +669,8 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
                       ],
                     ),
                   ),
+                  _buildControlHints(mobile),
+                  const SizedBox(height: 10),
                   _buildStepDots(accent),
                   const SizedBox(height: 8),
                   Expanded(child: _buildBoardArea(accent)),
@@ -579,35 +777,535 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
 
   Widget _buildDone(BuildContext context) {
     final accent = _theme.accent;
+    final reduceMotion = widget.settings.reduceMotion;
     return Scaffold(
       backgroundColor: _theme.backgroundBottom,
       body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.check_circle, size: 64, color: accent),
-                const SizedBox(height: 16),
-                Text(
-                  "You're ready — go play!",
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    shadows: neonShadows(accent),
-                  ),
+        child: Stack(
+          children: [
+            if (!reduceMotion)
+              Positioned.fill(
+                child: _ConfettiOverlay(
+                  colors: [
+                    _theme.colorFor('T4'),
+                    _theme.colorFor('S4'),
+                    _theme.colorFor('L4'),
+                    _theme.colorFor('O4'),
+                    _theme.colorFor('I4'),
+                  ],
                 ),
-                const SizedBox(height: 24),
-                FilledButton(
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  child: const Text('Finish'),
+              ),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0, end: 1),
+                      duration: const Duration(milliseconds: 550),
+                      curve: reduceMotion ? Curves.linear : Curves.elasticOut,
+                      builder: (context, t, child) =>
+                          Transform.scale(scale: t, child: child),
+                      child: Icon(Icons.check_circle, size: 72, color: accent),
+                    ),
+                    const SizedBox(height: 16),
+                    TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0, end: 1),
+                      duration: const Duration(milliseconds: 500),
+                      curve: Curves.easeOut,
+                      builder: (context, t, child) =>
+                          Opacity(opacity: t, child: child),
+                      child: Text(
+                        "You're ready — go play!",
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          shadows: neonShadows(accent),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    FilledButton(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      child: const Text('Finish'),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A one-shot confetti shower for the tutorial's finish screen -- pieces
+/// borrow this game's own tetromino colors rather than generic party
+/// colors, so the celebration still reads as "this game," not a stock
+/// effect. Skipped entirely under reduced motion (see [_buildDone]).
+class _ConfettiOverlay extends StatefulWidget {
+  const _ConfettiOverlay({required this.colors});
+
+  final List<Color> colors;
+
+  @override
+  State<_ConfettiOverlay> createState() => _ConfettiOverlayState();
+}
+
+class _ConfettiOverlayState extends State<_ConfettiOverlay>
+    with SingleTickerProviderStateMixin {
+  late final _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+  );
+  late final List<_ConfettiPiece> _pieces = _build();
+
+  List<_ConfettiPiece> _build() {
+    final rand = Random();
+    return List.generate(26, (_) {
+      return _ConfettiPiece(
+        x: rand.nextDouble(),
+        delay: rand.nextDouble() * 0.25,
+        speed: 0.75 + rand.nextDouble() * 0.55,
+        drift: (rand.nextDouble() - 0.5) * 0.5,
+        rotationSpeed: (rand.nextDouble() - 0.5) * 8,
+        size: 6 + rand.nextDouble() * 6,
+        color: widget.colors[rand.nextInt(widget.colors.length)],
+      );
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (context, _) => CustomPaint(
+          painter: _ConfettiPainter(t: _ctrl.value, pieces: _pieces),
+          size: Size.infinite,
+        ),
+      ),
+    );
+  }
+}
+
+class _ConfettiPiece {
+  _ConfettiPiece({
+    required this.x,
+    required this.delay,
+    required this.speed,
+    required this.drift,
+    required this.rotationSpeed,
+    required this.size,
+    required this.color,
+  });
+
+  final double x;
+  final double delay;
+  final double speed;
+  final double drift;
+  final double rotationSpeed;
+  final double size;
+  final Color color;
+}
+
+class _ConfettiPainter extends CustomPainter {
+  _ConfettiPainter({required this.t, required this.pieces});
+
+  final double t;
+  final List<_ConfettiPiece> pieces;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final p in pieces) {
+      final localT = ((t - p.delay) / (1 - p.delay)).clamp(0.0, 1.0);
+      if (localT <= 0) continue;
+      final y = size.height * 0.1 + size.height * 0.85 * localT * p.speed;
+      final x = size.width * p.x + sin(localT * pi * 2) * size.width * p.drift;
+      final fadeOut = localT > 0.8 ? (1 - localT) / 0.2 : 1.0;
+      final paint = Paint()
+        ..color = p.color.withValues(alpha: fadeOut.clamp(0.0, 1.0));
+      canvas.save();
+      canvas.translate(x, y);
+      canvas.rotate(localT * p.rotationSpeed);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: Offset.zero,
+            width: p.size,
+            height: p.size * 0.6,
+          ),
+          const Radius.circular(2),
+        ),
+        paint,
+      );
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ConfettiPainter oldDelegate) =>
+      oldDelegate.t != t;
+}
+
+/// Which input surface [_buildHintChip] renders for -- picked from the
+/// viewport width and [SettingsService.touchControlScheme], same split the
+/// rest of this screen (and [GameScreen]) already uses for real input.
+enum _HintScheme { keyboard, buttons, gestures }
+
+/// The shapes a touch gesture hint can animate -- one [_GestureGlyph] loop
+/// per member, see its painter.
+enum _Gesture { tapOnce, doubleTap, longPress, swipeUp, dragHorizontal }
+
+/// One taught action: the key(s) that trigger it, the icon its D-pad button
+/// wears (for the buttons-scheme hint), and which [_Gesture] mimics it.
+class _ActionHint {
+  const _ActionHint({
+    required this.keys,
+    required this.icon,
+    required this.label,
+    required this.gesture,
+  });
+
+  final List<String> keys;
+  final IconData icon;
+  final String label;
+  final _Gesture gesture;
+}
+
+/// A small "keyboard key" chip -- shows the player exactly which key to
+/// press instead of leaving it to the instruction text's prose.
+class _KeyCap extends StatelessWidget {
+  const _KeyCap({required this.label, required this.accent});
+
+  final String label;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: accent.withValues(alpha: 0.6)),
+        boxShadow: [
+          BoxShadow(color: accent.withValues(alpha: 0.25), blurRadius: 6),
+        ],
+      ),
+      child: Text(
+        label,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+}
+
+/// A gently breathing icon matching one of [TouchDpad]'s own button icons --
+/// under the buttons scheme, this is the cue to look for that icon on the
+/// real pad below rather than a full gesture demo (there's no gesture to
+/// demonstrate; the action is a tap on a fixed button).
+class _IconPulse extends StatefulWidget {
+  const _IconPulse({
+    required this.icon,
+    required this.accent,
+    required this.reduceMotion,
+  });
+
+  final IconData icon;
+  final Color accent;
+  final bool reduceMotion;
+
+  @override
+  State<_IconPulse> createState() => _IconPulseState();
+}
+
+class _IconPulseState extends State<_IconPulse>
+    with SingleTickerProviderStateMixin {
+  late final _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+  bool _started = false;
+
+  /// Checked in addition to [_IconPulse.reduceMotion] -- a test disabling
+  /// animations at the OS level (rather than through this app's own
+  /// setting) must still stop this loop, or `pumpAndSettle` never quiesces.
+  bool get _skipMotion =>
+      widget.reduceMotion || MediaQuery.of(context).disableAnimations;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Deferred to here (needs MediaQuery) rather than initState, guarded by
+    // _started since didChangeDependencies can re-fire. Touching _ctrl
+    // unconditionally forces its lazy construction now, while safely
+    // mounted -- see touch_dpad.dart's _PulsingGlowState for why leaving
+    // dispose() as the first access (when this never turns on) crashes.
+    if (!_started) {
+      _started = true;
+      final ctrl = _ctrl;
+      if (!_skipMotion) ctrl.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        final t = _skipMotion ? 0.0 : _ctrl.value;
+        return Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: widget.accent.withValues(alpha: 0.14 + 0.12 * t),
+            border: Border.all(
+              color: widget.accent.withValues(alpha: 0.5 + 0.3 * t),
+              width: 1.5,
+            ),
+          ),
+          child: Icon(widget.icon, color: Colors.white, size: 18),
+        );
+      },
+    );
+  }
+}
+
+/// A small looping animation of the actual touch gesture the current step
+/// needs -- a tap ripple, a double-tap, a long-press fill ring, an upward
+/// swipe, or a left-right drag -- so a gestures-scheme player sees exactly
+/// what to do rather than guessing from text alone.
+class _GestureGlyph extends StatefulWidget {
+  const _GestureGlyph({
+    required this.gesture,
+    required this.accent,
+    required this.reduceMotion,
+  });
+
+  final _Gesture gesture;
+  final Color accent;
+  final bool reduceMotion;
+
+  @override
+  State<_GestureGlyph> createState() => _GestureGlyphState();
+}
+
+class _GestureGlyphState extends State<_GestureGlyph>
+    with SingleTickerProviderStateMixin {
+  static Duration _durationFor(_Gesture g) => switch (g) {
+    _Gesture.tapOnce => const Duration(milliseconds: 1000),
+    _Gesture.doubleTap => const Duration(milliseconds: 1200),
+    _Gesture.longPress => const Duration(milliseconds: 1400),
+    _Gesture.swipeUp => const Duration(milliseconds: 1100),
+    _Gesture.dragHorizontal => const Duration(milliseconds: 1600),
+  };
+
+  late final _ctrl = AnimationController(
+    vsync: this,
+    duration: _durationFor(widget.gesture),
+  );
+
+  static IconData _staticIconFor(_Gesture g) => switch (g) {
+    _Gesture.tapOnce => Icons.touch_app,
+    _Gesture.doubleTap => Icons.touch_app,
+    _Gesture.longPress => Icons.touch_app,
+    _Gesture.swipeUp => Icons.swipe_up_alt,
+    _Gesture.dragHorizontal => Icons.swipe,
+  };
+
+  bool _started = false;
+
+  /// See _IconPulseState._skipMotion -- same reasoning applies here.
+  bool get _skipMotion =>
+      widget.reduceMotion || MediaQuery.of(context).disableAnimations;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_started) {
+      _started = true;
+      final ctrl = _ctrl;
+      if (!_skipMotion) ctrl.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_skipMotion) {
+      return SizedBox(
+        width: 34,
+        height: 34,
+        child: Icon(
+          _staticIconFor(widget.gesture),
+          color: widget.accent,
+          size: 20,
+        ),
+      );
+    }
+    return SizedBox(
+      width: 40,
+      height: 40,
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (context, _) => CustomPaint(
+          painter: _GesturePainter(
+            t: _ctrl.value,
+            gesture: widget.gesture,
+            color: widget.accent,
           ),
         ),
       ),
     );
   }
+}
+
+class _GesturePainter extends CustomPainter {
+  _GesturePainter({
+    required this.t,
+    required this.gesture,
+    required this.color,
+  });
+
+  final double t;
+  final _Gesture gesture;
+  final Color color;
+
+  void _paintRipple(Canvas canvas, Size size, double localT) {
+    final center = size.center(Offset.zero);
+    final maxR = size.shortestSide / 2 - 2;
+    final r = maxR * 0.35 + maxR * 0.65 * localT;
+    final alpha = (1 - localT).clamp(0.0, 1.0);
+    canvas.drawCircle(
+      center,
+      r,
+      Paint()
+        ..color = color.withValues(alpha: 0.55 * alpha)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+    canvas.drawCircle(center, maxR * 0.16, Paint()..color = color);
+  }
+
+  void _paintLongPress(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final maxR = size.shortestSide / 2 - 2;
+    canvas.drawCircle(
+      center,
+      maxR,
+      Paint()
+        ..color = color.withValues(alpha: 0.22)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: maxR),
+      -pi / 2,
+      2 * pi * t,
+      false,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3
+        ..strokeCap = StrokeCap.round,
+    );
+    canvas.drawCircle(center, maxR * 0.16, Paint()..color = color);
+  }
+
+  void _paintSwipeUp(Canvas canvas, Size size) {
+    final x = size.width / 2;
+    final travel = size.height - 8;
+    final y = size.height - 4 - travel * t;
+    final fadeIn = (t / 0.15).clamp(0.0, 1.0);
+    final fadeOut = ((1 - t) / 0.15).clamp(0.0, 1.0);
+    final alpha = fadeIn < fadeOut ? fadeIn : fadeOut;
+    final paint = Paint()..color = color.withValues(alpha: alpha);
+    canvas.drawCircle(Offset(x, y), 3.5, paint);
+    final arrow = Path()
+      ..moveTo(x - 6, y + 9)
+      ..lineTo(x, y)
+      ..lineTo(x + 6, y + 9);
+    canvas.drawPath(
+      arrow,
+      Paint()
+        ..color = paint.color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+  }
+
+  void _paintDragHorizontal(Canvas canvas, Size size) {
+    final y = size.height / 2;
+    final left = size.width * 0.18;
+    final right = size.width * 0.82;
+    canvas.drawLine(
+      Offset(left, y),
+      Offset(right, y),
+      Paint()
+        ..color = color.withValues(alpha: 0.25)
+        ..strokeWidth = 2,
+    );
+    final ping = (sin(2 * pi * t) + 1) / 2;
+    final x = left + (right - left) * ping;
+    canvas.drawCircle(Offset(x, y), 4, Paint()..color = color);
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    switch (gesture) {
+      case _Gesture.tapOnce:
+        _paintRipple(canvas, size, t);
+      case _Gesture.doubleTap:
+        _paintRipple(canvas, size, t);
+        _paintRipple(canvas, size, (t + 0.5) % 1.0);
+      case _Gesture.longPress:
+        _paintLongPress(canvas, size);
+      case _Gesture.swipeUp:
+        _paintSwipeUp(canvas, size);
+      case _Gesture.dragHorizontal:
+        _paintDragHorizontal(canvas, size);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _GesturePainter oldDelegate) =>
+      oldDelegate.t != t ||
+      oldDelegate.gesture != gesture ||
+      oldDelegate.color != color;
 }

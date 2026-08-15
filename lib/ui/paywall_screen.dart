@@ -146,7 +146,20 @@ class _OfferingsList extends StatelessWidget {
             ),
           ),
         TextButton(
-          onPressed: () => purchases.restorePurchases(),
+          onPressed: () async {
+            final restored = await purchases.restorePurchases();
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    restored
+                        ? 'VIP restored!'
+                        : "No previous purchase found on this account.",
+                  ),
+                ),
+              );
+            }
+          },
           child: const Text('Restore purchases'),
         ),
       ],

@@ -20,9 +20,11 @@ void _disableTestAnimations(WidgetTester tester) {
 /// Pushes the tutorial level on top of a placeholder screen — Skip calls
 /// `Navigator.maybePop`, which only actually pops when there's something to
 /// pop back to, matching how every real caller pushes this screen.
-Future<void> _pumpPushed(WidgetTester tester) async {
+Future<void> _pumpPushed(WidgetTester tester, {bool gestures = false}) async {
   _disableTestAnimations(tester);
-  SharedPreferences.setMockInitialValues({});
+  SharedPreferences.setMockInitialValues({
+    if (gestures) 'settings_touch_control_scheme': 'gestures',
+  });
   final settings = await SettingsService.create();
   await tester.pumpWidget(
     MaterialApp(
@@ -75,18 +77,9 @@ void main() {
     await tester.pump();
     await _advance(tester);
 
-    expect(find.textContaining("won't fuse"), findsOneWidget);
-
-    // Step 2: Mirror, then drop it -- must be mirrored at lock time.
-    await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
-    await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.space);
-    await tester.pump();
-    await _advance(tester);
-
     expect(find.textContaining('Mirror it'), findsOneWidget);
 
-    // Step 3: Fusion -- mirror, then drop anywhere on the pre-placed row.
+    // Step 2: Fusion -- mirror, then drop anywhere on the pre-placed row.
     await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
     await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
@@ -95,14 +88,14 @@ void main() {
 
     expect(find.textContaining('Hold this piece'), findsOneWidget);
 
-    // Step 4: Hold.
+    // Step 3: Hold.
     await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
     await tester.pump();
     await _advance(tester);
 
     expect(find.textContaining('Fill that stray gap'), findsOneWidget);
 
-    // Step 5: Cavity Fill.
+    // Step 4: Cavity Fill.
     await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
     await tester.pump();
     await _advance(tester);
@@ -133,4 +126,37 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'a real keyboard viewport spells out the actual keys for the current '
+    'step, since prose alone ("rotate it") doesn\'t say which key does that',
+    (tester) async {
+      await _pumpPushed(tester); // default test surface is wider than the
+      // mobile breakpoint, so this exercises the keyboard hint scheme.
+
+      expect(find.text('←'), findsOneWidget);
+      expect(find.text('→'), findsOneWidget);
+      expect(find.text('↑'), findsOneWidget);
+      expect(find.text('Q'), findsOneWidget);
+      expect(find.text('Move'), findsOneWidget);
+      expect(find.text('Rotate'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'gestures scheme on mobile shows an animated gesture hint instead of '
+    'key glyphs -- there is no keyboard to reference on a phone',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await _pumpPushed(tester, gestures: true);
+
+      expect(find.text('←'), findsNothing);
+      expect(find.text('Move'), findsOneWidget);
+      expect(find.text('Rotate'), findsOneWidget);
+    },
+  );
 }

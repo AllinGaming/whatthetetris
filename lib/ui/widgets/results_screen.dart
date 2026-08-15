@@ -44,7 +44,11 @@ class ResultsScreen extends StatelessWidget {
   final int mirrorUses;
   final int cavityFills;
   final List<Achievement> newlyUnlocked;
-  final VoidCallback onPlayAgain;
+
+  /// Null for [GameMode.daily] -- only one attempt is allowed per day, so
+  /// there's nothing to play again until tomorrow (see `GameScreen._startGame`
+  /// for the backstop that also blocks the other ways to trigger a restart).
+  final VoidCallback? onPlayAgain;
   final VoidCallback onShare;
   final VoidCallback onMenu;
 
@@ -193,18 +197,27 @@ class ResultsScreen extends StatelessWidget {
               const SizedBox(height: 20),
               Row(
                 children: [
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: onPlayAgain,
-                      child: const Text('Play Again'),
+                  if (onPlayAgain != null) ...[
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: onPlayAgain,
+                        child: const Text('Play Again'),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: onShare,
-                    icon: const Icon(Icons.share, size: 18),
-                    label: const Text('Share'),
-                  ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: onShare,
+                      icon: const Icon(Icons.share, size: 18),
+                      label: const Text('Share'),
+                    ),
+                  ] else
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: onShare,
+                        icon: const Icon(Icons.share, size: 18),
+                        label: const Text('Share'),
+                      ),
+                    ),
                 ],
               ),
               const SizedBox(height: 8),

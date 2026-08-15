@@ -138,4 +138,37 @@ void main() {
     expect(shared, isTrue);
     expect(wentToMenu, isTrue);
   });
+
+  testWidgets(
+    'a null onPlayAgain (Daily Challenge -- only one attempt per day) '
+    'hides the Play Again button but keeps Share working',
+    (WidgetTester tester) async {
+      var shared = false;
+
+      await tester.pumpWidget(
+        wrap(
+          ResultsScreen(
+            mode: GameMode.daily,
+            score: 100,
+            level: 1,
+            lines: 1,
+            isNewBest: false,
+            durationMs: 1000,
+            fusions: 0,
+            tetrises: 0,
+            mirrorUses: 0,
+            cavityFills: 0,
+            newlyUnlocked: const [],
+            onPlayAgain: null,
+            onShare: () => shared = true,
+            onMenu: () {},
+          ),
+        ),
+      );
+
+      expect(find.text('Play Again'), findsNothing);
+      await tester.tap(find.text('Share'));
+      expect(shared, isTrue);
+    },
+  );
 }

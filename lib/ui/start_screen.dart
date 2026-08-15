@@ -137,171 +137,189 @@ class StartScreen extends StatelessWidget {
               // otherwise it only sizes itself to its centered, width-capped
               // content, leaving dead margins on wider screens where a drag
               // silently does nothing instead of scrolling.
-              child: SingleChildScrollView(
-                child: Center(
+              child: LayoutBuilder(
+                builder: (context, viewport) => SingleChildScrollView(
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      // Fills wide (desktop/web) viewports instead of
-                      // sitting as a narrow column with dead space on
-                      // either side, while staying phone-shaped on small
-                      // screens.
-                      maxWidth: math.min(
-                        MediaQuery.sizeOf(context).width * 0.92,
-                        900,
-                      ),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          FusionHero(
-                            colorA: theme.current.colorFor('T4'),
-                            colorB: theme.current.colorFor('S4'),
-                            reduceMotion: settings.reduceMotion,
+                    // On a short mode list / a tall or 2K+ desktop viewport,
+                    // the content is shorter than the screen -- without this,
+                    // Center has unbounded height to work with inside a
+                    // scroll view and just shrink-wraps to the content,
+                    // pinning everything to the top and leaving the entire
+                    // leftover height as dead space below. Forcing the
+                    // scrollable's child to be at least viewport-tall gives
+                    // Center a real height to center within; once content
+                    // exceeds the viewport (long mode list on a phone), this
+                    // constraint is a no-op and it scrolls normally.
+                    constraints: BoxConstraints(minHeight: viewport.maxHeight),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          // Fills wide (desktop/web) viewports instead of
+                          // sitting as a narrow column with dead space on
+                          // either side, while staying phone-shaped on small
+                          // screens.
+                          maxWidth: math.min(
+                            MediaQuery.sizeOf(context).width * 0.92,
+                            900,
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'What The Tetris',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.headlineMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  shadows: neonShadows(accent),
-                                ),
-                          ),
-                          const SizedBox(height: 14),
-                          _MenuToolbar(
-                            accent: accent,
-                            items: [
-                              _ToolbarItem(
-                                icon: Icons.school_outlined,
-                                tooltip: 'How to Play',
-                                onPressed: () => _showTutorial(context),
-                              ),
-                              _ToolbarItem(
-                                icon: Icons.emoji_events_outlined,
-                                tooltip: 'Stats & Achievements',
-                                onPressed: () => Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => AchievementsScreen(
-                                      stats: stats,
-                                      highScores: highScores,
-                                      dailyChallenge: dailyChallenge,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              _ToolbarItem(
-                                icon: Icons.leaderboard_outlined,
-                                tooltip: 'Leaderboards',
-                                onPressed: () => Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => LeaderboardScreen(
-                                      leaderboard: live.leaderboard,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              _ToolbarItem(
-                                icon: Icons.star_outline,
-                                tooltip: 'VIP Pass',
-                                onPressed: () => Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => PaywallScreen(
-                                      purchases: live.purchases,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              _ToolbarItem(
-                                icon: Icons.settings,
-                                tooltip: 'Settings',
-                                onPressed: () => Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => SettingsScreen(
-                                      audio: audio,
-                                      settings: settings,
-                                      theme: theme,
-                                      live: live,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Triangle-half Tetris. Pick a mode to start.',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: Colors.white70),
-                          ),
-                          const SizedBox(height: 20),
-                          _CategoryHeader(
-                            label: 'Piece Colors',
-                            accent: accent,
-                          ),
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              _ColorModeChip(
-                                label: 'Duo',
-                                badge: 'Recommended',
-                                color: accent,
-                                selected:
-                                    settings.pieceColorMode ==
-                                    PieceColorMode.duo,
-                                onTap: () => unawaited(
-                                  settings.setPieceColorMode(
-                                    PieceColorMode.duo,
+                              FusionHero(
+                                colorA: theme.current.colorFor('T4'),
+                                colorB: theme.current.colorFor('S4'),
+                                reduceMotion: settings.reduceMotion,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'What The Tetris',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineMedium
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      shadows: neonShadows(accent),
+                                    ),
+                              ),
+                              const SizedBox(height: 14),
+                              _MenuToolbar(
+                                accent: accent,
+                                items: [
+                                  _ToolbarItem(
+                                    icon: Icons.school_outlined,
+                                    tooltip: 'How to Play',
+                                    onPressed: () => _showTutorial(context),
                                   ),
-                                ),
+                                  _ToolbarItem(
+                                    icon: Icons.emoji_events_outlined,
+                                    tooltip: 'Stats & Achievements',
+                                    onPressed: () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => AchievementsScreen(
+                                          stats: stats,
+                                          highScores: highScores,
+                                          dailyChallenge: dailyChallenge,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  _ToolbarItem(
+                                    icon: Icons.leaderboard_outlined,
+                                    tooltip: 'Leaderboards',
+                                    onPressed: () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => LeaderboardScreen(
+                                          leaderboard: live.leaderboard,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  _ToolbarItem(
+                                    icon: Icons.star_outline,
+                                    tooltip: 'VIP Pass',
+                                    onPressed: () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => PaywallScreen(
+                                          purchases: live.purchases,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  _ToolbarItem(
+                                    icon: Icons.settings,
+                                    tooltip: 'Settings',
+                                    onPressed: () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => SettingsScreen(
+                                          audio: audio,
+                                          settings: settings,
+                                          theme: theme,
+                                          live: live,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              _ColorModeChip(
-                                label: 'Random',
-                                color: Colors.pinkAccent,
-                                selected:
-                                    settings.pieceColorMode ==
-                                    PieceColorMode.random,
-                                onTap: () => _confirmRandomColorMode(context),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Triangle-half Tetris. Pick a mode to start.',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(color: Colors.white70),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 28),
-                          for (final category in _categoryOrder)
-                            if (GameMode.values.any(
-                              (m) =>
-                                  m.config.category == category &&
-                                  !_hiddenModes.contains(m),
-                            )) ...[
+                              const SizedBox(height: 20),
                               _CategoryHeader(
-                                label: _categoryLabels[category]!,
+                                label: 'Piece Colors',
                                 accent: accent,
                               ),
                               const SizedBox(height: 10),
-                              for (final mode in GameMode.values.where(
-                                (m) =>
-                                    m.config.category == category &&
-                                    !_hiddenModes.contains(m),
-                              )) ...[
-                                _ModeCard(
-                                  mode: mode,
-                                  highScores: highScores,
-                                  audio: audio,
-                                  settings: settings,
-                                  theme: theme,
-                                  stats: stats,
-                                  dailyChallenge: dailyChallenge,
-                                  live: live,
-                                ),
-                                const SizedBox(height: 12),
-                              ],
-                              const SizedBox(height: 12),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  _ColorModeChip(
+                                    label: 'Duo',
+                                    badge: 'Recommended',
+                                    color: accent,
+                                    selected:
+                                        settings.pieceColorMode ==
+                                        PieceColorMode.duo,
+                                    onTap: () => unawaited(
+                                      settings.setPieceColorMode(
+                                        PieceColorMode.duo,
+                                      ),
+                                    ),
+                                  ),
+                                  _ColorModeChip(
+                                    label: 'Random',
+                                    color: Colors.pinkAccent,
+                                    selected:
+                                        settings.pieceColorMode ==
+                                        PieceColorMode.random,
+                                    onTap: () =>
+                                        _confirmRandomColorMode(context),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 28),
+                              for (final category in _categoryOrder)
+                                if (GameMode.values.any(
+                                  (m) =>
+                                      m.config.category == category &&
+                                      !_hiddenModes.contains(m),
+                                )) ...[
+                                  _CategoryHeader(
+                                    label: _categoryLabels[category]!,
+                                    accent: accent,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  for (final mode in GameMode.values.where(
+                                    (m) =>
+                                        m.config.category == category &&
+                                        !_hiddenModes.contains(m),
+                                  )) ...[
+                                    _ModeCard(
+                                      mode: mode,
+                                      highScores: highScores,
+                                      audio: audio,
+                                      settings: settings,
+                                      theme: theme,
+                                      stats: stats,
+                                      dailyChallenge: dailyChallenge,
+                                      live: live,
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                  const SizedBox(height: 12),
+                                ],
                             ],
-                        ],
+                          ),
+                        ),
                       ),
                     ),
                   ),

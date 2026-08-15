@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/game_mode.dart';
+import '../services/daily_challenge_service.dart';
 import '../services/leaderboard_service.dart';
 import 'widgets/neon_text.dart';
 
@@ -28,18 +29,35 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     GameMode.arcade,
     GameMode.sprint,
     GameMode.ultra,
+    GameMode.daily,
   ];
+
+  /// Daily Challenge scores live in their own per-day collection rather
+  /// than the mode's all-time one (see [LeaderboardService.fetchTop]) --
+  /// [GameScreen] already submits them this way, but until now nothing ever
+  /// fetched them back, so a whole day's worth of daily submissions was
+  /// effectively write-only.
+  Future<List<LeaderboardEntry>> _fetch(GameMode mode) {
+    if (mode == GameMode.daily) {
+      return widget.leaderboard.fetchTop(
+        mode: mode,
+        isDaily: true,
+        dailySeed: DailyChallengeService.seedForToday(),
+      );
+    }
+    return widget.leaderboard.fetchTop(mode: mode);
+  }
 
   @override
   void initState() {
     super.initState();
-    _entries = widget.leaderboard.fetchTop(mode: _selected);
+    _entries = _fetch(_selected);
   }
 
   void _selectMode(GameMode mode) {
     setState(() {
       _selected = mode;
-      _entries = widget.leaderboard.fetchTop(mode: mode);
+      _entries = _fetch(mode);
     });
   }
 

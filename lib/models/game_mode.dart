@@ -37,6 +37,7 @@ class GameModeConfig {
     required this.hasCavityFiller,
     required this.hasManualSpeedBoost,
     required this.speedCurve,
+    this.rows = 20,
     this.cols = 10,
     this.pieceNames,
     this.softFloor = false,
@@ -55,8 +56,14 @@ class GameModeConfig {
   final bool hasManualSpeedBoost;
   final Duration Function(int level, int speedBoost) speedCurve;
 
-  /// Board width. Chill uses a narrower board for readability; every other
-  /// mode keeps the standard 10.
+  /// Board height. Every mode keeps the standard 20 except Daily, which
+  /// shrinks it to keep its prefilled puzzle (half the board) smaller and
+  /// less overwhelming to fully clear.
+  final int rows;
+
+  /// Board width. Chill and Daily use a narrower board (readability for
+  /// Chill, an easier puzzle for Daily); every other mode keeps the
+  /// standard 10.
   final int cols;
 
   /// Restricts the piece bag to a named subset (see [Pieces.byNames]).
@@ -169,6 +176,8 @@ class GameModeConfig {
     hasCavityFiller: true,
     hasManualSpeedBoost: false,
     speedCurve: SpeedCurve.classic,
+    rows: 16,
+    cols: 8,
     useDailySeed: true,
     startsPrefilled: true,
     endCondition: EndCondition.boardCleared,

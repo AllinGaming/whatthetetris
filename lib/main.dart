@@ -102,8 +102,21 @@ class HalfBlockPyramidApp extends StatefulWidget {
   State<HalfBlockPyramidApp> createState() => _HalfBlockPyramidAppState();
 }
 
-class _HalfBlockPyramidAppState extends State<HalfBlockPyramidApp> {
+class _HalfBlockPyramidAppState extends State<HalfBlockPyramidApp>
+    with WidgetsBindingObserver {
   bool _musicKicked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
   /// Chill's calm loop is now the one music bed for the whole app (menu
   /// included), but web browsers refuse to play audio until the very first
@@ -115,6 +128,22 @@ class _HalfBlockPyramidAppState extends State<HalfBlockPyramidApp> {
     if (_musicKicked) return;
     _musicKicked = true;
     unawaited(widget.audio.playMusic(MusicTrack.zen));
+  }
+
+  /// The music bed is deliberately one continuous track across the menu and
+  /// every game mode (see AudioService.pauseMusic), so in-app navigation
+  /// never touches it -- but nothing was pausing it when the app itself
+  /// left the foreground (backgrounded, tab hidden), so it just kept
+  /// playing silently in the background indefinitely. This is the only
+  /// place that should stop it, since it's the only place that knows the
+  /// whole app -- not just one screen -- is no longer in front.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(widget.audio.resumeMusic());
+    } else {
+      unawaited(widget.audio.pauseMusic());
+    }
   }
 
   @override
