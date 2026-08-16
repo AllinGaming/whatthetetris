@@ -12,6 +12,7 @@ import 'package:whatthetetris/services/live_services.dart';
 import 'package:whatthetetris/services/settings_service.dart';
 import 'package:whatthetetris/services/stats_service.dart';
 import 'package:whatthetetris/services/theme_service.dart';
+import 'package:whatthetetris/ui/widgets/next_piece_preview.dart';
 import 'package:whatthetetris/ui/widgets/touch_dpad.dart';
 
 Future<void> _pumpGame(
@@ -88,34 +89,86 @@ void main() {
     expect(_painter(tester).active!.mirrored, isFalse);
 
     await tester.tapAt(tester.getCenter(_boardFinder()));
-    // onDoubleTap is also wired under gestures, so Flutter must wait out
-    // the double-tap disambiguation window before a single tap actually
-    // fires -- and before that recognizer's own internal timer is safe to
-    // leave pending at test teardown.
-    await tester.pump(const Duration(milliseconds: 400));
+    // Board taps are resolved on raw pointer events (BoardGestureController)
+    // rather than GestureDetector's onTapUp/onDoubleTap pair, so a single
+    // tap fires immediately -- no double-tap disambiguation window to wait
+    // out. Only a settle pump is needed here.
+    await tester.pump();
 
     expect(_painter(tester).active!.mirrored, isTrue);
   });
 
-  testWidgets('double-tapping the board hard-drops under gestures', (
-    tester,
-  ) async {
-    await _pumpGame(tester, size: const Size(1200, 900), gestures: true);
+  testWidgets(
+    'a quick second tap on the board hard-drops under gestures, as a bonus '
+    'on top of the mirror each individual tap already does',
+    (tester) async {
+      await _pumpGame(tester, size: const Size(1200, 900), gestures: true);
 
-    final revisionBefore = _painter(tester).boardRevision;
-    final center = tester.getCenter(_boardFinder());
+      final revisionBefore = _painter(tester).boardRevision;
+      final center = tester.getCenter(_boardFinder());
 
-    await tester.tapAt(center);
-    await tester.pump(const Duration(milliseconds: 50));
-    await tester.tapAt(center);
-    await tester.pump(const Duration(milliseconds: 400));
+      await tester.tapAt(center);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tapAt(center);
+      await tester.pump();
 
-    expect(
-      _painter(tester).boardRevision,
-      greaterThan(revisionBefore),
-      reason: 'double-tap should hard-drop and lock the piece',
-    );
-  });
+      expect(
+        _painter(tester).boardRevision,
+        greaterThan(revisionBefore),
+        reason: 'a quick second tap should hard-drop and lock the piece',
+      );
+    },
+  );
+
+  testWidgets(
+    'long-pressing the board reliably holds even with a little natural '
+    'finger jitter, since a real touch is never perfectly still -- this '
+    'used to race Pan in the gesture arena and silently lose',
+    (tester) async {
+      await _pumpGame(tester, size: const Size(1200, 900), gestures: true);
+
+      expect(
+        find.byType(NextPiecePreview),
+        findsNWidgets(3),
+        reason: 'no held piece yet -- just the 3 upcoming previews',
+      );
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(_boardFinder()),
+      );
+      // Well under the drag-lock threshold -- must not cancel the hold.
+      await gesture.moveBy(const Offset(2, -2));
+      await tester.pump(const Duration(milliseconds: 500));
+      await gesture.up();
+      await tester.pump();
+
+      expect(
+        find.byType(NextPiecePreview),
+        findsNWidgets(4),
+        reason: "holding should populate the side panel's Held slot",
+      );
+    },
+  );
+
+  testWidgets(
+    'long-pressing the board reliably holds under the buttons scheme too '
+    '-- board gestures are layered on top of the D-pad, not gated by scheme',
+    (tester) async {
+      await _pumpGame(tester, size: const Size(1200, 900));
+
+      expect(find.byType(NextPiecePreview), findsNWidgets(3));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(_boardFinder()),
+      );
+      await gesture.moveBy(const Offset(-2, 2));
+      await tester.pump(const Duration(milliseconds: 500));
+      await gesture.up();
+      await tester.pump();
+
+      expect(find.byType(NextPiecePreview), findsNWidgets(4));
+    },
+  );
 
   testWidgets('swiping up on the board rotates under gestures', (tester) async {
     await _pumpGame(tester, size: const Size(1200, 900), gestures: true);

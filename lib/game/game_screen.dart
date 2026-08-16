@@ -25,6 +25,7 @@ import '../ui/widgets/floating_toast.dart';
 import '../ui/widgets/pause_menu.dart';
 import '../ui/widgets/results_screen.dart';
 import '../ui/widgets/touch_dpad.dart';
+import 'board_gesture_controller.dart';
 import 'board_painter.dart';
 import 'game_animations.dart';
 import 'game_board.dart';
@@ -222,6 +223,7 @@ class _GameScreenState extends State<GameScreen>
     _countdownTimer?.cancel();
     _focusNode.dispose();
     _anim.dispose();
+    _boardGestures.dispose();
     // Music is shared across the whole app now (one track for menu and
     // every mode), so leaving this screen shouldn't stop it -- it just
     // keeps playing back on the menu underneath.
@@ -1117,19 +1119,27 @@ class _GameScreenState extends State<GameScreen>
   // (locked to whichever axis the drag started in, so a horizontal slide
   // can't also register as a soft drop), drag down to soft-drop, and a
   // fast downward fling hard-drops instead. Tap rotates, long-press holds.
-  // Under [TouchControlScheme.gestures] (see _handleBoardTap/_onBoardPanEnd)
+  // Under [TouchControlScheme.gestures] (see _handleBoardTap/_handleBoardSwipeUp)
   // tap and the vertical-fling meaning both change instead, since that
-  // scheme repurposes tap for Mirror and adds an upward swipe for rotate.
-  // All the actual actions below are self-guarded by [_canAcceptInput], so
-  // these handlers can call them unconditionally, same as [_handleKey].
-  static const double _dragLockThreshold = 8.0;
-  static const double _hardDropFlingVelocity = 1200.0;
-  static const double _rotateSwipeVelocity = 700.0;
+  // scheme repurposes tap for Mirror and adds an upward swipe for rotate,
+  // plus a quick second tap as a bonus hard-drop shortcut. All the actual
+  // actions below are self-guarded by [_canAcceptInput], so these handlers
+  // can call them unconditionally, same as [_handleKey]. See
+  // [BoardGestureController] for why this is built on raw pointer events
+  // rather than a stack of [GestureDetector] recognizers.
+  late final _boardGestures = BoardGestureController(
+    getCellSize: () => _cellSize,
+    onMoveLeft: _moveLeft,
+    onMoveRight: _moveRight,
+    onSoftDrop: _softDrop,
+    onSwipeUp: _handleBoardSwipeUp,
+    onFlingDown: _hardDrop,
+    onLongPress: _holdActive,
+    onTap: _handleBoardTap,
+    onQuickDoubleTap: _handleBoardQuickDoubleTap,
+  );
 
   double _cellSize = 1;
-  double _dragDx = 0;
-  double _dragDy = 0;
-  bool? _dragHorizontal;
 
   bool get _gestureScheme =>
       widget.settings.touchControlScheme == TouchControlScheme.gestures;
@@ -1174,52 +1184,18 @@ class _GameScreenState extends State<GameScreen>
     _mirrorActive();
   }
 
-  void _onBoardPanStart(DragStartDetails details) {
-    _dragDx = 0;
-    _dragDy = 0;
-    _dragHorizontal = null;
+  /// Swipe-up-to-rotate is a gestures-scheme-only affordance -- the buttons
+  /// scheme already rotates via tap, so a stray upward swipe there
+  /// shouldn't also rotate.
+  void _handleBoardSwipeUp() {
+    if (_gestureScheme) _rotateRight();
   }
 
-  void _onBoardPanUpdate(DragUpdateDetails details) {
-    _dragDx += details.delta.dx;
-    _dragDy += details.delta.dy;
-    _dragHorizontal ??=
-        (_dragDx.abs() >= _dragLockThreshold ||
-            _dragDy.abs() >= _dragLockThreshold)
-        ? _dragDx.abs() >= _dragDy.abs()
-        : null;
-
-    if (_cellSize <= 0) return;
-    if (_dragHorizontal == true) {
-      while (_dragDx >= _cellSize) {
-        _moveRight();
-        _dragDx -= _cellSize;
-      }
-      while (_dragDx <= -_cellSize) {
-        _moveLeft();
-        _dragDx += _cellSize;
-      }
-    } else if (_dragHorizontal == false) {
-      while (_dragDy >= _cellSize) {
-        _softDrop();
-        _dragDy -= _cellSize;
-      }
-      if (_dragDy < 0) _dragDy = 0; // dragging back up never moves it up
-    }
-  }
-
-  void _onBoardPanEnd(DragEndDetails details) {
-    if (_dragHorizontal == false) {
-      final dy = details.velocity.pixelsPerSecond.dy;
-      if (dy > _hardDropFlingVelocity) {
-        _hardDrop();
-      } else if (_gestureScheme && dy < -_rotateSwipeVelocity) {
-        _rotateRight();
-      }
-    }
-    _dragDx = 0;
-    _dragDy = 0;
-    _dragHorizontal = null;
+  /// A quick second tap near the first is a bonus hard-drop shortcut, but
+  /// only under the gestures scheme -- under buttons, tap already rotates,
+  /// and two quick taps there should just rotate twice, not hard-drop.
+  void _handleBoardQuickDoubleTap() {
+    if (_gestureScheme) _hardDrop();
   }
 
   static const _fusionBonusPerCell = 25;
@@ -1502,18 +1478,12 @@ class _GameScreenState extends State<GameScreen>
                 alignment: Alignment.center,
                 children: [
                   Positioned.fill(
-                    child: GestureDetector(
-                      onTapUp: (details) =>
-                          _handleBoardTap(details.localPosition),
-                      // Only wired under the gestures scheme -- adding it
-                      // unconditionally would make Flutter wait out the
-                      // double-tap timeout before ever firing a plain tap,
-                      // adding input lag to the default scheme's rotate.
-                      onDoubleTap: _gestureScheme ? _hardDrop : null,
-                      onLongPress: _holdActive,
-                      onPanStart: _onBoardPanStart,
-                      onPanUpdate: _onBoardPanUpdate,
-                      onPanEnd: _onBoardPanEnd,
+                    child: Listener(
+                      behavior: HitTestBehavior.opaque,
+                      onPointerDown: _boardGestures.handlePointerDown,
+                      onPointerMove: _boardGestures.handlePointerMove,
+                      onPointerUp: _boardGestures.handlePointerUp,
+                      onPointerCancel: _boardGestures.handlePointerCancel,
                       child: AnimatedBuilder(
                         animation: _anim.shake,
                         builder: (context, child) => Transform.translate(
@@ -1764,8 +1734,9 @@ class _GameScreenState extends State<GameScreen>
             onShare: _shareResult,
           ),
           // The gesture scheme plays entirely on the board itself (swipe to
-          // move, tap to mirror or fill a tapped cavity, double-tap to hard
-          // drop, swipe up to rotate, long-press to hold) -- the D-pad would
+          // move, tap to mirror or fill a tapped cavity, swipe down to hard
+          // drop, swipe up to rotate, long-press to hold, plus a quick
+          // second tap as a bonus hard-drop shortcut) -- the D-pad would
           // just be redundant screen space taken from the board.
           if (!_gestureScheme)
             TouchDpad(

@@ -12,6 +12,7 @@ import '../models/theme_palette.dart';
 import '../services/settings_service.dart';
 import '../ui/widgets/neon_text.dart';
 import '../ui/widgets/touch_dpad.dart';
+import 'board_gesture_controller.dart';
 import 'board_painter.dart';
 import 'game_animations.dart';
 import 'game_board.dart';
@@ -48,21 +49,26 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
   /// identical so rotation feels the same here as it will in a real run.
   static const _kicks = [0, -1, 1, -2, 2];
 
-  /// Same thresholds [GameScreen] uses for its board gestures, so drag/
-  /// swipe/fling feel identical here and in a real run.
-  static const _dragLockThreshold = 8.0;
-  static const _hardDropFlingVelocity = 1200.0;
-  static const _rotateSwipeVelocity = 700.0;
-
   late GameBoard _board;
   late final GameAnimations _anim = GameAnimations(vsync: this);
   final _boardStaticCache = BoardStaticCache();
   final _focusNode = FocusNode();
 
+  /// Same [BoardGestureController] [GameScreen] uses for its board gestures,
+  /// so drag/swipe/fling/hold feel identical here and in a real run.
+  late final _boardGestures = BoardGestureController(
+    getCellSize: () => _cellSize,
+    onMoveLeft: () => _move(-1, 0),
+    onMoveRight: () => _move(1, 0),
+    onSoftDrop: () => _move(0, 1),
+    onSwipeUp: _handleBoardSwipeUp,
+    onFlingDown: _hardDrop,
+    onLongPress: _hold,
+    onTap: _handleBoardTap,
+    onQuickDoubleTap: _handleBoardQuickDoubleTap,
+  );
+
   double _cellSize = 1;
-  double _dragDx = 0;
-  double _dragDy = 0;
-  bool? _dragHorizontal;
 
   _Step _step = _Step.moveRotateDrop;
   ActivePiece? _active;
@@ -85,6 +91,7 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
     _advanceTimer?.cancel();
     _anim.dispose();
     _focusNode.dispose();
+    _boardGestures.dispose();
     super.dispose();
   }
 
@@ -411,52 +418,18 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
     _mirror();
   }
 
-  void _onBoardPanStart(DragStartDetails details) {
-    _dragDx = 0;
-    _dragDy = 0;
-    _dragHorizontal = null;
+  /// Swipe-up-to-rotate is a gestures-scheme-only affordance -- the buttons
+  /// scheme already rotates via tap, so a stray upward swipe there
+  /// shouldn't also rotate.
+  void _handleBoardSwipeUp() {
+    if (_gestureScheme) _rotate(1);
   }
 
-  void _onBoardPanUpdate(DragUpdateDetails details) {
-    _dragDx += details.delta.dx;
-    _dragDy += details.delta.dy;
-    _dragHorizontal ??=
-        (_dragDx.abs() >= _dragLockThreshold ||
-            _dragDy.abs() >= _dragLockThreshold)
-        ? _dragDx.abs() >= _dragDy.abs()
-        : null;
-
-    if (_cellSize <= 0) return;
-    if (_dragHorizontal == true) {
-      while (_dragDx >= _cellSize) {
-        _move(1, 0);
-        _dragDx -= _cellSize;
-      }
-      while (_dragDx <= -_cellSize) {
-        _move(-1, 0);
-        _dragDx += _cellSize;
-      }
-    } else if (_dragHorizontal == false) {
-      while (_dragDy >= _cellSize) {
-        _move(0, 1);
-        _dragDy -= _cellSize;
-      }
-      if (_dragDy < 0) _dragDy = 0; // dragging back up never moves it down
-    }
-  }
-
-  void _onBoardPanEnd(DragEndDetails details) {
-    if (_dragHorizontal == false) {
-      final dy = details.velocity.pixelsPerSecond.dy;
-      if (dy > _hardDropFlingVelocity) {
-        _hardDrop();
-      } else if (_gestureScheme && dy < -_rotateSwipeVelocity) {
-        _rotate(1);
-      }
-    }
-    _dragDx = 0;
-    _dragDy = 0;
-    _dragHorizontal = null;
+  /// A quick second tap near the first is a bonus hard-drop shortcut, but
+  /// only under the gestures scheme -- under buttons, tap already rotates,
+  /// and two quick taps there should just rotate twice, not hard-drop.
+  void _handleBoardQuickDoubleTap() {
+    if (_gestureScheme) _hardDrop();
   }
 
   String get _instruction {
@@ -500,7 +473,7 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
             keys: ['Space'],
             icon: Icons.keyboard_double_arrow_down,
             label: 'Drop',
-            gesture: _Gesture.doubleTap,
+            gesture: _Gesture.swipeDown,
           ),
         ];
       case _Step.fusion:
@@ -515,7 +488,7 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
             keys: ['Space'],
             icon: Icons.keyboard_double_arrow_down,
             label: 'Drop',
-            gesture: _Gesture.doubleTap,
+            gesture: _Gesture.swipeDown,
           ),
         ];
       case _Step.hold:
@@ -699,16 +672,12 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
         child: LayoutBuilder(
           builder: (context, constraints) {
             _cellSize = constraints.maxWidth / _config.cols;
-            return GestureDetector(
-              onTapUp: (details) => _handleBoardTap(details.localPosition),
-              // Only wired under gestures -- adding it unconditionally
-              // would make Flutter wait out the double-tap timeout before
-              // ever firing a plain tap, adding input lag under buttons.
-              onDoubleTap: _gestureScheme ? _hardDrop : null,
-              onLongPress: _hold,
-              onPanStart: _onBoardPanStart,
-              onPanUpdate: _onBoardPanUpdate,
-              onPanEnd: _onBoardPanEnd,
+            return Listener(
+              behavior: HitTestBehavior.opaque,
+              onPointerDown: _boardGestures.handlePointerDown,
+              onPointerMove: _boardGestures.handlePointerMove,
+              onPointerUp: _boardGestures.handlePointerUp,
+              onPointerCancel: _boardGestures.handlePointerCancel,
               child: CustomPaint(
                 painter: BoardPainter(
                   board: _board.cells,
@@ -735,7 +704,11 @@ class _TutorialLevelScreenState extends State<TutorialLevelScreen>
 
   Widget _buildTouchDpad() {
     return TouchDpad(
-      enabled: _canAct,
+      // The cavity-fill step never spawns a piece (there's nothing to
+      // move/rotate/hold), so _canAct is false there -- but the Fill
+      // button itself still needs to be tappable, or mobile players on
+      // the buttons scheme have no way to complete this step at all.
+      enabled: _canAct || _step == _Step.cavityFill,
       onMoveLeft: () => _move(-1, 0),
       onMoveRight: () => _move(1, 0),
       onSoftDrop: () => _move(0, 1),
@@ -969,7 +942,7 @@ enum _HintScheme { keyboard, buttons, gestures }
 
 /// The shapes a touch gesture hint can animate -- one [_GestureGlyph] loop
 /// per member, see its painter.
-enum _Gesture { tapOnce, doubleTap, longPress, swipeUp, dragHorizontal }
+enum _Gesture { tapOnce, swipeDown, longPress, swipeUp, dragHorizontal }
 
 /// One taught action: the key(s) that trigger it, the icon its D-pad button
 /// wears (for the buttons-scheme hint), and which [_Gesture] mimics it.
@@ -1123,7 +1096,7 @@ class _GestureGlyphState extends State<_GestureGlyph>
     with SingleTickerProviderStateMixin {
   static Duration _durationFor(_Gesture g) => switch (g) {
     _Gesture.tapOnce => const Duration(milliseconds: 1000),
-    _Gesture.doubleTap => const Duration(milliseconds: 1200),
+    _Gesture.swipeDown => const Duration(milliseconds: 1100),
     _Gesture.longPress => const Duration(milliseconds: 1400),
     _Gesture.swipeUp => const Duration(milliseconds: 1100),
     _Gesture.dragHorizontal => const Duration(milliseconds: 1600),
@@ -1136,7 +1109,7 @@ class _GestureGlyphState extends State<_GestureGlyph>
 
   static IconData _staticIconFor(_Gesture g) => switch (g) {
     _Gesture.tapOnce => Icons.touch_app,
-    _Gesture.doubleTap => Icons.touch_app,
+    _Gesture.swipeDown => Icons.swipe_down_alt,
     _Gesture.longPress => Icons.touch_app,
     _Gesture.swipeUp => Icons.swipe_up_alt,
     _Gesture.dragHorizontal => Icons.swipe,
@@ -1270,6 +1243,30 @@ class _GesturePainter extends CustomPainter {
     );
   }
 
+  void _paintSwipeDown(Canvas canvas, Size size) {
+    final x = size.width / 2;
+    final travel = size.height - 8;
+    final y = 4 + travel * t;
+    final fadeIn = (t / 0.15).clamp(0.0, 1.0);
+    final fadeOut = ((1 - t) / 0.15).clamp(0.0, 1.0);
+    final alpha = fadeIn < fadeOut ? fadeIn : fadeOut;
+    final paint = Paint()..color = color.withValues(alpha: alpha);
+    canvas.drawCircle(Offset(x, y), 3.5, paint);
+    final arrow = Path()
+      ..moveTo(x - 6, y - 9)
+      ..lineTo(x, y)
+      ..lineTo(x + 6, y - 9);
+    canvas.drawPath(
+      arrow,
+      Paint()
+        ..color = paint.color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+  }
+
   void _paintDragHorizontal(Canvas canvas, Size size) {
     final y = size.height / 2;
     final left = size.width * 0.18;
@@ -1291,9 +1288,8 @@ class _GesturePainter extends CustomPainter {
     switch (gesture) {
       case _Gesture.tapOnce:
         _paintRipple(canvas, size, t);
-      case _Gesture.doubleTap:
-        _paintRipple(canvas, size, t);
-        _paintRipple(canvas, size, (t + 0.5) % 1.0);
+      case _Gesture.swipeDown:
+        _paintSwipeDown(canvas, size);
       case _Gesture.longPress:
         _paintLongPress(canvas, size);
       case _Gesture.swipeUp:
