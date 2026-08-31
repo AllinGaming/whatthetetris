@@ -44,4 +44,11 @@ jobs:
           if-no-files-found: error
 
       - name: Build web release
-        run: flutter build web --release --no-pub --base-href=/
+        env:
+          FIREBASE_WEB_API_KEY: ${{ secrets.FIREBASE_WEB_API_KEY }}
+        run: |
+          flutter build web \
+            --release \
+            --no-pub \
+            --base-href=/ \
+            --dart-define=FIREBASE_WEB_API_KEY=${{ secrets.FIREBASE_WEB_API_KEY }}

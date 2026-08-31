@@ -42,7 +42,13 @@ jobs:
         run: flutter test --no-pub
 
       - name: Build web release
-        run: flutter build web --release --base-href=/whatthetetris/
+        env:
+          FIREBASE_WEB_API_KEY: ${{ secrets.FIREBASE_WEB_API_KEY }}
+        run: |
+          flutter build web \
+            --release \
+            --base-href=/whatthetetris/ \
+            --dart-define=FIREBASE_WEB_API_KEY=${{ secrets.FIREBASE_WEB_API_KEY }}
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
