@@ -49,7 +49,7 @@ class DefaultFirebaseOptions {
   }
 
   static const android = FirebaseOptions(
-    apiKey: 'placeholder-not-a-real-key',
+    apiKey: 'placeholder-not-a-real-ke',
     appId: '1:000000000000:android:0000000000000000000000',
     messagingSenderId: '000000000000',
     projectId: 'whatthetetris-placeholder',
