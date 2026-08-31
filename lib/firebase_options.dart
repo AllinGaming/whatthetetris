@@ -32,7 +32,7 @@ class DefaultFirebaseOptions {
         );
     }
   }
-
+  // firebase options
   static FirebaseOptions get web {
     return FirebaseOptions(
       apiKey: const String.fromEnvironment(
