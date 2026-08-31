@@ -33,15 +33,20 @@ class DefaultFirebaseOptions {
     }
   }
 
-  static const web = FirebaseOptions(
-    apiKey: 'AIzaSyDAjFELmnP3oaHJh7cVAeEFB5nBPqYvTNk',
-    appId: '1:219212649574:web:64b03f4bad30d8269689a7',
-    messagingSenderId: '219212649574',
-    projectId: 'whatthetetris',
-    authDomain: 'whatthetetris.firebaseapp.com',
-    storageBucket: 'whatthetetris.firebasestorage.app',
-    measurementId: 'G-04PRRQ6JX4',
-  );
+  static FirebaseOptions get web {
+    return FirebaseOptions(
+      apiKey: const String.fromEnvironment(
+        'FIREBASE_WEB_API_KEY',
+        defaultValue: 'REPLACE_WITH_FIREBASE_WEB_API_KEY',
+      ),
+      appId: '1:219212649574:web:64b03f4bad30d8269689a7',
+      messagingSenderId: '219212649574',
+      projectId: 'whatthetetris',
+      authDomain: 'whatthetetris.firebaseapp.com',
+      storageBucket: 'whatthetetris.firebasestorage.app',
+      measurementId: 'G-04PRRQ6JX4',
+    );
+  }
 
   static const android = FirebaseOptions(
     apiKey: 'placeholder-not-a-real-key',
