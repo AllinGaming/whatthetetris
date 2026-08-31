@@ -75,7 +75,7 @@ void main() {
   );
 
   test(
-    'a second recordResult the same day is a no-op, not a streak reset',
+    'retries keep the best result without advancing the streak twice',
     () async {
       final yesterday = DateTime.now().subtract(const Duration(days: 1));
       SharedPreferences.setMockInitialValues({
@@ -90,15 +90,18 @@ void main() {
       expect(service.completedCount, 6);
       expect(service.todaysScore, 100);
 
-      // A second call the same day (a caller bug, a retry, or two sessions
-      // racing) must not re-derive the streak from today's own
-      // just-written date — that would read as "not yesterday" and
-      // incorrectly collapse a real streak back down to 1.
-      await service.recordResult(999);
+      await service.recordResult(50);
 
       expect(service.currentStreak, 6);
       expect(service.completedCount, 6);
       expect(service.todaysScore, 100);
+
+      await service.recordResult(999, cleared: true);
+
+      expect(service.currentStreak, 6);
+      expect(service.completedCount, 6);
+      expect(service.todaysScore, 999);
+      expect(service.todaysCleared, isTrue);
     },
   );
 }

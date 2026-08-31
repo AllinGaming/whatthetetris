@@ -37,4 +37,15 @@ void main() {
     await service.submitRun(GameMode.classic, score: 100, level: 2);
     expect(notifications, 1);
   });
+
+  test('2 Player team score persists only when it improves', () async {
+    SharedPreferences.setMockInitialValues({});
+    final service = await HighScoreService.create();
+
+    expect(service.bestMultiplayerScore, 0);
+    expect(await service.submitMultiplayerScore(1200), isTrue);
+    expect(service.bestMultiplayerScore, 1200);
+    expect(await service.submitMultiplayerScore(900), isFalse);
+    expect(service.bestMultiplayerScore, 1200);
+  });
 }

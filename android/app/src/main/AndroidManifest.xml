@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Firebase signaling and the WebRTC data channel need network access in
+         release builds. Gameplay uses no camera or microphone. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="What The Tetris"
+        android:label="What The Triangle"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         <activity

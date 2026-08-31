@@ -19,7 +19,7 @@ class ResultsScreen extends StatelessWidget {
     this.challengeCleared = false,
     required this.durationMs,
     required this.fusions,
-    required this.tetrises,
+    required this.fourLineClears,
     required this.mirrorUses,
     required this.cavityFills,
     required this.newlyUnlocked,
@@ -35,19 +35,19 @@ class ResultsScreen extends StatelessWidget {
   final bool isNewBest;
 
   /// True when this run just won a [GameMode.daily] puzzle board
-  /// ([EndCondition.boardCleared]) — takes priority over [isNewBest] in the
+  /// ([EndCondition.boardReducedToOneRow]) — takes priority over [isNewBest] in
+  /// the
   /// headline since it's the rarer, more specific signal.
   final bool challengeCleared;
   final int durationMs;
   final int fusions;
-  final int tetrises;
+  final int fourLineClears;
   final int mirrorUses;
   final int cavityFills;
   final List<Achievement> newlyUnlocked;
 
-  /// Null for [GameMode.daily] -- only one attempt is allowed per day, so
-  /// there's nothing to play again until tomorrow (see `GameScreen._startGame`
-  /// for the backstop that also blocks the other ways to trigger a restart).
+  /// May be null when a caller intentionally does not offer a replay action.
+  /// Daily Challenge passes a callback so today's puzzle can be retried.
   final VoidCallback? onPlayAgain;
   final VoidCallback onShare;
   final VoidCallback onMenu;
@@ -89,7 +89,7 @@ class ResultsScreen extends StatelessWidget {
             children: [
               Text(
                 challengeCleared
-                    ? 'Board Cleared! 🎉'
+                    ? 'Challenge Complete! 🎉'
                     : (isNewBest ? 'New Best!' : 'Run Complete'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -133,8 +133,8 @@ class ResultsScreen extends StatelessWidget {
                   _Stat(label: 'Level', value: '$level'),
                   _Stat(label: 'Lines', value: '$lines'),
                   _Stat(label: 'Time', value: _durationLabel),
-                  if (tetrises > 0)
-                    _Stat(label: 'Tetrises', value: '$tetrises'),
+                  if (fourLineClears > 0)
+                    _Stat(label: 'Four-line clears', value: '$fourLineClears'),
                   if (fusions > 0) _Stat(label: 'Fusions', value: '$fusions'),
                   if (mirrorUses > 0)
                     _Stat(label: 'Mirror flips', value: '$mirrorUses'),

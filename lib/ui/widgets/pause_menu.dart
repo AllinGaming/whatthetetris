@@ -132,13 +132,18 @@ class PauseMenu extends StatelessWidget {
                   ),
                   const SizedBox(height: 18),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      _MiniStat(label: 'Score', value: '$score'),
+                      Expanded(
+                        child: _MiniStat(label: 'Score', value: '$score'),
+                      ),
                       Container(width: 1, height: 32, color: Colors.white12),
-                      _MiniStat(label: 'Level', value: '$level'),
+                      Expanded(
+                        child: _MiniStat(label: 'Level', value: '$level'),
+                      ),
                       Container(width: 1, height: 32, color: Colors.white12),
-                      _MiniStat(label: 'Lines', value: '$lines'),
+                      Expanded(
+                        child: _MiniStat(label: 'Lines', value: '$lines'),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 24),

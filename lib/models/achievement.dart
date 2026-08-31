@@ -65,18 +65,18 @@ class Achievement {
       progress: (ctx) => '${ctx.stats.totalLinesCleared.clamp(0, 1000)}/1000',
     ),
     Achievement(
-      id: 'tetris',
-      title: 'Tetris!',
+      id: 'four_line_clear',
+      title: 'Triangle!',
       description: 'Clear four lines at once.',
-      isUnlocked: (ctx) => ctx.stats.totalTetrises >= 1,
+      isUnlocked: (ctx) => ctx.stats.totalFourLineClears >= 1,
       progress: (ctx) => null,
     ),
     Achievement(
-      id: 'tetris_master',
-      title: 'Tetris Master',
-      description: 'Clear a Tetris 25 times, lifetime.',
-      isUnlocked: (ctx) => ctx.stats.totalTetrises >= 25,
-      progress: (ctx) => '${ctx.stats.totalTetrises.clamp(0, 25)}/25',
+      id: 'four_line_master',
+      title: 'Triangle Master',
+      description: 'Clear four lines at once 25 times, lifetime.',
+      isUnlocked: (ctx) => ctx.stats.totalFourLineClears >= 25,
+      progress: (ctx) => '${ctx.stats.totalFourLineClears.clamp(0, 25)}/25',
     ),
     Achievement(
       id: 'fusion_novice',
@@ -189,14 +189,14 @@ class Achievement {
     Achievement(
       id: 'daily_challenger',
       title: 'Daily Challenger',
-      description: 'Complete 7 Daily Challenge runs.',
+      description: 'Play the Daily Challenge on 7 different days.',
       isUnlocked: (ctx) => ctx.dailyChallenge.completedCount >= 7,
       progress: (ctx) => '${ctx.dailyChallenge.completedCount.clamp(0, 7)}/7',
     ),
     Achievement(
       id: 'chill_champion',
-      title: 'Chill Champion',
-      description: 'Reach level 5 in Chill mode.',
+      title: 'Classic Contender',
+      description: 'Reach level 5 in Classic.',
       isUnlocked: (ctx) => ctx.highScores.bestLevel(GameMode.chill) >= 5,
       progress: (ctx) =>
           '${ctx.highScores.bestLevel(GameMode.chill).clamp(0, 5)}/5',
@@ -238,9 +238,9 @@ class Achievement {
       id: 'classic_grinder',
       title: 'Classic Grinder',
       description: 'Reach level 20 in Classic.',
-      isUnlocked: (ctx) => ctx.highScores.bestLevel(GameMode.classic) >= 20,
+      isUnlocked: (ctx) => ctx.highScores.bestLevel(GameMode.chill) >= 20,
       progress: (ctx) =>
-          '${ctx.highScores.bestLevel(GameMode.classic).clamp(0, 20)}/20',
+          '${ctx.highScores.bestLevel(GameMode.chill).clamp(0, 20)}/20',
     ),
     Achievement(
       id: 'zen_master',
@@ -260,7 +260,7 @@ class Achievement {
     Achievement(
       id: 'daily_devotee',
       title: 'Daily Devotee',
-      description: 'Complete 30 Daily Challenge runs.',
+      description: 'Play the Daily Challenge on 30 different days.',
       isUnlocked: (ctx) => ctx.dailyChallenge.completedCount >= 30,
       progress: (ctx) => '${ctx.dailyChallenge.completedCount.clamp(0, 30)}/30',
     ),

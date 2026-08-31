@@ -7,6 +7,7 @@ import '../models/game_mode.dart';
 class HighScoreService extends ChangeNotifier {
   HighScoreService(this._prefs);
 
+  static const _multiplayerScoreKey = 'best_score_multiplayer';
   final SharedPreferences _prefs;
 
   static Future<HighScoreService> create() async {
@@ -16,6 +17,10 @@ class HighScoreService extends ChangeNotifier {
   int bestScore(GameMode mode) => _prefs.getInt('best_score_${mode.name}') ?? 0;
 
   int bestLevel(GameMode mode) => _prefs.getInt('best_level_${mode.name}') ?? 1;
+
+  /// Best completed shared-board score on this device. Both peers record the
+  /// same team score when a round ends, but each keeps their own local best.
+  int get bestMultiplayerScore => _prefs.getInt(_multiplayerScoreKey) ?? 0;
 
   /// Fastest completion time in milliseconds, for time-attack modes like
   /// Sprint where lower is better — null until a run has ever finished.
@@ -45,5 +50,13 @@ class HighScoreService extends ChangeNotifier {
       await _prefs.setInt('best_time_${mode.name}', timeMs);
       notifyListeners();
     }
+  }
+
+  /// Returns true only when [score] became a new local 2 Player best.
+  Future<bool> submitMultiplayerScore(int score) async {
+    if (score <= bestMultiplayerScore) return false;
+    final changed = await _prefs.setInt(_multiplayerScoreKey, score);
+    if (changed) notifyListeners();
+    return changed;
   }
 }

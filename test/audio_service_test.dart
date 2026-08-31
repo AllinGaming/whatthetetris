@@ -11,13 +11,21 @@ void main() {
     expect(Sfx.values, contains(Sfx.achievementUnlock));
   });
 
-  test('every mode shares Chill/Zen\'s calm ambient track', () {
+  test('every mode shares the supplied gameplay track', () {
     for (final mode in GameMode.values) {
       expect(
         MusicTrack.forMode(mode),
-        MusicTrack.zen,
-        reason: 'expected zen for $mode',
+        MusicTrack.gameplay,
+        reason: 'expected the shared gameplay track for $mode',
       );
     }
+  });
+
+  test('the custom tmusic asset is the looping menu track', () {
+    expect(MusicTrack.menu.asset, 'tmusic.mp3');
+  });
+
+  test('the supplied MP3 is the looping gameplay track', () {
+    expect(MusicTrack.gameplay.asset, 'zen_classic_arcade_music.mp3');
   });
 }

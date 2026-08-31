@@ -5,7 +5,7 @@
 
 ## 1. North Star
 
-Money buys **cosmetics, convenience, and support** — never a gameplay advantage. A free player and a paying player face the identical speed curve, the identical piece bag, the identical scoring rules, and the identical leaderboard eligibility. This isn't just an ethical stance — it's a positioning decision: this game's audience (puzzle-game players who came from Tetris) is unusually quick to detect and resent pay-to-win, and a fair model is a genuine differentiator worth advertising in store copy.
+Money buys **cosmetics, convenience, and support** — never a gameplay advantage. A free player and a paying player face the identical speed curve, the identical piece bag, the identical scoring rules, and the identical leaderboard eligibility. Puzzle-game players are quick to detect and resent pay-to-win, so a fair model is a genuine differentiator worth advertising in store copy.
 
 Concretely, ruled **out** entirely: purchasable score multipliers, purchasable slower curves, purchasable extra lives/continues that a free player can't also earn some other way, loot boxes/gacha of any kind, forced interstitial ads, and streak-freeze-style purchases that monetize anxiety.
 
@@ -36,7 +36,7 @@ Given the fair-monetization pillar and that this game has no forced-continue mec
 | *(none — direct consumable, not yet built)* | Individual cosmetic pack purchases — designed to be checked against a per-user owned-items list in Firestore rather than an entitlement, once built |
 | *(none — non-consumable, no unlock, not yet built)* | Supporter Pack — purely a badge flag, once built |
 
-Entitlement state is mirrored server-side into `users/{uid}/entitlements` by a Cloud Function subscribed to RevenueCat webhooks (see `TECHNICAL_ARCHITECTURE.md` §5) — the client **checks Firestore, not RevenueCat directly, for gating**, so a jailbroken/tampered client can't spoof entitlement locally.
+VIP is currently disabled and the active project deploys no Cloud Functions. If paid entitlements are introduced later, they must be verified by a trusted purchase service before writing the reserved `users/{uid}.entitlements` field; the client is intentionally forbidden from writing that field itself.
 
 ## 4. Pricing — placeholder bands, not commitments
 

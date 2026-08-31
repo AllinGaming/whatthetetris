@@ -1,15 +1,14 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Tracks the local Daily Challenge: one attempt per calendar day, on a seed
-/// derived from today's date so every player on this device sees the same
-/// board layout on the same day (docs/GDD.md SS5, SS6.6).
+/// Tracks the local Daily Challenge on a seed derived from today's date so
+/// every attempt sees the same board and piece order that day. Players may
+/// retry freely; the service keeps their best result while streaks and the
+/// completion counter advance at most once per calendar day.
 ///
-/// This is a device-local approximation, not a validated shared challenge —
-/// there is no server yet to guarantee every *player* (not just this
-/// device) gets the identical seed at a trusted time boundary, and nothing
-/// stops a player from changing their device clock. Real cross-player Daily
-/// Challenge with a leaderboard needs the Cloud Function design in
+/// The seed and progress tracking remain device-local. There is no trusted
+/// server clock or score validation, so changing the device clock or modifying
+/// the client can affect the lightweight shared leaderboard. See
 /// docs/TECHNICAL_ARCHITECTURE.md SS4.
 class DailyChallengeService extends ChangeNotifier {
   DailyChallengeService(this._prefs);
@@ -40,9 +39,9 @@ class DailyChallengeService extends ChangeNotifier {
   int? get todaysScore =>
       playedToday ? _prefs.getInt('daily_last_score') : null;
 
-  /// Whether today's attempt actually cleared the puzzle board, as opposed
-  /// to ending by topping out first (docs/GDD.md — Daily Challenge redesign,
-  /// [EndCondition.boardCleared]).
+  /// Whether today's attempt completed the puzzle goal, as opposed to ending
+  /// by topping out first (docs/GDD.md — Daily Challenge redesign,
+  /// [EndCondition.boardReducedToOneRow]).
   bool get todaysCleared =>
       playedToday && (_prefs.getBool('daily_last_cleared') ?? false);
 
@@ -67,11 +66,18 @@ class DailyChallengeService extends ChangeNotifier {
   Future<void> recordResult(int score, {bool cleared = false}) async {
     final today = _todayKey(DateTime.now());
     if (_lastPlayedDateKey == today) {
-      // Already recorded today's result. A second call for the same
-      // calendar day (a caller-side bug, a retry, or two sessions racing)
-      // must be a no-op — otherwise `continuesStreak` below reads today's
-      // own just-written date instead of yesterday's, and a legitimate
-      // streak gets clobbered back down to 1 on its own second write.
+      // Retries improve today's stored result without inflating a daily
+      // streak or the unique-day completion count.
+      var changed = false;
+      if (score > (todaysScore ?? 0)) {
+        await _prefs.setInt('daily_last_score', score);
+        changed = true;
+      }
+      if (cleared && !todaysCleared) {
+        await _prefs.setBool('daily_last_cleared', true);
+        changed = true;
+      }
+      if (changed) notifyListeners();
       return;
     }
     final previousDate = _lastPlayedDateKey;

@@ -139,7 +139,7 @@ class GameAnimations {
 
   /// Triggers the hard-drop/big-clear screen shake, unless reduced motion
   /// is on. [intensity] scales the wobble amplitude (clamped 0.4-1.6) so a
-  /// Tetris or a long hard drop reads as more forceful than a bare-minimum
+  /// A four-line clear or long hard drop reads as more forceful than a minimal
   /// trigger of the same event.
   void triggerShake({double intensity = 1.0}) {
     if (reduceMotion) return;

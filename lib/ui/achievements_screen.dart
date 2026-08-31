@@ -96,7 +96,7 @@ class _StatsGrid extends StatelessWidget {
     final entries = {
       'Games played': '${stats.gamesPlayed}',
       'Lines cleared': '${stats.totalLinesCleared}',
-      'Tetrises': '${stats.totalTetrises}',
+      'Four-line clears': '${stats.totalFourLineClears}',
       'Fusion bonuses': '${stats.totalFusionBonuses}',
       'Best combo': '${stats.bestComboEver}x',
       'Mirror flips': '${stats.totalMirrorUses}',

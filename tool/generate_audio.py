@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates the placeholder synthesized SFX/music set for What The Tetris.
+"""Generates the placeholder synthesized SFX/music set for What The Triangle.
 
 These are programmatically synthesized (sine/square waves, simple envelopes,
 noise) so the game ships with real, distinct audio feedback immediately.

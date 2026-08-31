@@ -1,9 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 
 import '../firebase_options.dart';
-import '../game/replay.dart';
 import '../models/game_mode.dart';
 import 'cloud_auth_service.dart';
 
@@ -20,41 +18,102 @@ class LeaderboardEntry {
   final int level;
 }
 
-/// Client side of the score-validation pipeline in
-/// docs/TECHNICAL_ARCHITECTURE.md SS4: submits a run's replay to the
-/// `submitScore` Cloud Function (`functions/src/index.ts`) rather than
-/// writing a score directly — `firestore.rules` makes direct client writes
-/// to `leaderboards`/`dailyChallenge` impossible regardless.
-///
+/// Lightweight Firestore leaderboards with no Cloud Functions dependency.
+/// Only local personal bests are attempted, and a transaction writes only
+/// when that score also improves the remote best. Security rules constrain
+/// ownership, fields, types, ranges, timestamps, and score direction.
 class LeaderboardService {
   LeaderboardService(this._auth);
 
   final CloudAuthService _auth;
+  final Map<String, List<LeaderboardEntry>> _topCache = {};
 
-  bool get available => isFirebaseConfigured && _auth.available;
+  bool get available => isFirebaseLeaderboardConfigured && _auth.available;
+  bool get currentPlayerIsAnonymous => _auth.isAnonymous;
+  String get currentPlayerShortId => _auth.shortPlayerId;
 
-  /// Returns true only if the Cloud Function actually accepted the score.
-  /// A false return (never a thrown exception) covers both "not available"
-  /// and "the function rejected this submission."
+  bool isCurrentPlayer(String uid) => uid == _auth.uid;
+
+  CollectionReference<Map<String, dynamic>> _entries({
+    required GameMode mode,
+    required bool isDaily,
+    int? dailySeed,
+  }) => isDaily
+      ? FirebaseFirestore.instance
+            .collection('dailyChallenge')
+            .doc('$dailySeed')
+            .collection('entries')
+      : FirebaseFirestore.instance
+            .collection('leaderboards')
+            .doc(mode.name)
+            .collection('entries');
+
+  CollectionReference<Map<String, dynamic>> _multiplayerEntries() =>
+      FirebaseFirestore.instance
+          .collection('leaderboards')
+          .doc('multiplayer')
+          .collection('entries');
+
+  /// Uses one document read and performs one write only when [score] beats the
+  /// existing remote best. It is never called for an ordinary completed run.
   Future<bool> submitScore({
     required GameMode mode,
     required int score,
     required int level,
-    required Replay replay,
+    required bool isNewBest,
     bool isDaily = false,
+    int? dailySeed,
   }) async {
-    if (!available) return false;
+    if (!available || !isNewBest || score <= 0) return false;
+    if (isDaily && dailySeed == null) return false;
+    if (isDaily ? mode != GameMode.daily : mode != GameMode.chill) {
+      return false;
+    }
+    return _submitEntry(
+      entries: _entries(mode: mode, isDaily: isDaily, dailySeed: dailySeed),
+      score: score,
+      level: level,
+    );
+  }
+
+  /// Saves a player's best shared-board team score. Both peers may submit
+  /// the same final result, but each writes only their own improving entry.
+  Future<bool> submitMultiplayerScore({
+    required int score,
+    required int level,
+    required bool isNewBest,
+  }) async {
+    if (!available || !isNewBest || score <= 0) return false;
+    return _submitEntry(
+      entries: _multiplayerEntries(),
+      score: score,
+      level: level,
+    );
+  }
+
+  Future<bool> _submitEntry({
+    required CollectionReference<Map<String, dynamic>> entries,
+    required int score,
+    required int level,
+  }) async {
+    final uid = _auth.uid;
+    if (uid == null) return false;
     try {
-      final callable = FirebaseFunctions.instance.httpsCallable('submitScore');
-      final result = await callable.call<Map<String, dynamic>>({
-        'mode': mode.name,
-        'score': score,
-        'level': level,
-        'seed': replay.seed,
-        'isDaily': isDaily,
-        'replay': replay.toJson(),
+      final entry = entries.doc(uid);
+      var wrote = false;
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final existing = await transaction.get(entry);
+        final existingScore = existing.data()?['score'];
+        if (existingScore is int && existingScore >= score) return;
+        transaction.set(entry, {
+          'score': score,
+          'level': level,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        wrote = true;
       });
-      return result.data['accepted'] == true;
+      if (wrote) _topCache.clear();
+      return wrote;
     } catch (_) {
       return false;
     }
@@ -68,24 +127,47 @@ class LeaderboardService {
     required GameMode mode,
     bool isDaily = false,
     int? dailySeed,
-    int limit = 20,
+    int limit = 10,
+    bool forceRefresh = false,
   }) async {
-    if (!isFirebaseConfigured) return const [];
+    if (!available) return const [];
+    return _fetchEntries(
+      entries: _entries(mode: mode, isDaily: isDaily, dailySeed: dailySeed),
+      cacheKey: '${mode.name}:${isDaily ? dailySeed : 'all'}:$limit',
+      limit: limit,
+      forceRefresh: forceRefresh,
+    );
+  }
+
+  /// Top shared-board scores. An entry is the best team result achieved by
+  /// that Firebase player, regardless of which room partner they played with.
+  Future<List<LeaderboardEntry>> fetchTopMultiplayer({
+    int limit = 10,
+    bool forceRefresh = false,
+  }) async {
+    if (!available) return const [];
+    return _fetchEntries(
+      entries: _multiplayerEntries(),
+      cacheKey: 'multiplayer:all:$limit',
+      limit: limit,
+      forceRefresh: forceRefresh,
+    );
+  }
+
+  Future<List<LeaderboardEntry>> _fetchEntries({
+    required CollectionReference<Map<String, dynamic>> entries,
+    required String cacheKey,
+    required int limit,
+    required bool forceRefresh,
+  }) async {
+    final cached = _topCache[cacheKey];
+    if (!forceRefresh && cached != null) return cached;
     try {
-      final collection = isDaily
-          ? FirebaseFirestore.instance
-                .collection('dailyChallenge')
-                .doc('$dailySeed')
-                .collection('entries')
-          : FirebaseFirestore.instance
-                .collection('leaderboards')
-                .doc(mode.name)
-                .collection('entries');
-      final snapshot = await collection
+      final snapshot = await entries
           .orderBy('score', descending: true)
           .limit(limit)
           .get();
-      return snapshot.docs
+      final leaderboardEntries = snapshot.docs
           .map(
             (doc) => LeaderboardEntry(
               uid: doc.id,
@@ -94,6 +176,9 @@ class LeaderboardService {
             ),
           )
           .toList();
+      final result = List<LeaderboardEntry>.unmodifiable(leaderboardEntries);
+      _topCache[cacheKey] = result;
+      return result;
     } catch (_) {
       return const [];
     }

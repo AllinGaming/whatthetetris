@@ -16,7 +16,7 @@ enum Sfx {
   clear1,
   clear2,
   clear3,
-  clearTetris,
+  clearFourLine,
   fusionBonus,
   comboTick,
   cavityFill,
@@ -40,7 +40,8 @@ extension on Sfx {
     Sfx.clear1 => 'clear_1.wav',
     Sfx.clear2 => 'clear_2.wav',
     Sfx.clear3 => 'clear_3.wav',
-    Sfx.clearTetris => 'clear_tetris.wav',
+    // Keep the legacy filename so existing packaged assets remain compatible.
+    Sfx.clearFourLine => 'clear_tetris.wav',
     Sfx.fusionBonus => 'fusion_bonus.wav',
     Sfx.comboTick => 'combo_tick.wav',
     Sfx.cavityFill => 'cavity_fill.wav',
@@ -56,18 +57,15 @@ extension on Sfx {
 
 /// Background music beds. Looping is handled by the player itself.
 enum MusicTrack {
-  menu('music_menu_loop.wav'),
-  marathon('music_marathon_loop.wav'),
-  zen('music_zen_loop.wav'),
-  arcade('music_arcade_loop.wav');
+  menu('tmusic.mp3'),
+  gameplay('zen_classic_arcade_music.mp3');
 
   const MusicTrack(this.asset);
   final String asset;
 
-  /// Every mode (and the menu) shares Chill's calm ambient bed rather than
-  /// switching tracks per mode — one consistent musical identity for the
-  /// whole app.
-  static MusicTrack forMode(GameMode mode) => MusicTrack.zen;
+  /// Every gameplay mode shares the supplied gameplay loop. Menu and
+  /// room-waiting screens use [MusicTrack.menu] instead.
+  static MusicTrack forMode(GameMode mode) => MusicTrack.gameplay;
 }
 
 /// Central audio gateway: independent music/SFX volume, a master mute, and
@@ -89,6 +87,8 @@ class AudioService extends ChangeNotifier {
   final List<AudioPlayer> _sfxPool = List.generate(4, (_) => AudioPlayer());
   int _sfxPoolIndex = 0;
   MusicTrack? _currentTrack;
+  int _musicRequest = 0;
+  Future<void> _musicOperation = Future.value();
 
   static Future<AudioService> create() async {
     return AudioService(await SharedPreferences.getInstance());
@@ -100,12 +100,15 @@ class AudioService extends ChangeNotifier {
 
   Future<void> setMuted(bool value) async {
     await _prefs.setBool(_keyMuted, value);
+    // Update every visible mute button as soon as the persisted state lands;
+    // a platform audio call may complete later (or fail on an unsupported
+    // test/web codec) and should never make the HUD feel unresponsive.
+    notifyListeners();
     try {
       await _musicPlayer.setVolume(value ? 0 : musicVolume);
     } catch (_) {
       // Same reasoning as playMusic -- never let audio break gameplay.
     }
-    notifyListeners();
   }
 
   Future<void> setMusicVolume(double value) async {
@@ -125,36 +128,46 @@ class AudioService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> playMusic(MusicTrack track) async {
-    if (_currentTrack == track) return;
+  Future<void> playMusic(MusicTrack track) {
+    if (_currentTrack == track) return Future.value();
+    final request = ++_musicRequest;
     final previousTrack = _currentTrack;
     _currentTrack = track;
-    try {
-      await _musicPlayer.stop();
-      await _musicPlayer.setVolume(muted ? 0 : musicVolume);
-      await _musicPlayer.play(AssetSource('audio/${track.asset}'));
-    } catch (_) {
-      // Autoplay/codec issues (e.g. web before a user gesture) must never
-      // crash the game -- audio is enhancement, not a dependency. Roll back
-      // so a later retry (e.g. once a user gesture unlocks web autoplay)
-      // isn't silently skipped by the guard above.
-      _currentTrack = previousTrack;
-    }
+    return _musicOperation = _musicOperation.then((_) async {
+      // Skip stale requests before they touch the player. Serializing these
+      // operations prevents a slow old stop() from silencing a newer route's
+      // track after rapid menu -> game navigation.
+      if (request != _musicRequest) return;
+      try {
+        await _musicPlayer.stop();
+        if (request != _musicRequest) return;
+        await _musicPlayer.setVolume(muted ? 0 : musicVolume);
+        if (request != _musicRequest) return;
+        await _musicPlayer.play(AssetSource('audio/${track.asset}'));
+      } catch (_) {
+        // Autoplay/codec issues (e.g. web before a user gesture) must never
+        // crash the game. Roll back so a later retry isn't silently skipped.
+        if (request == _musicRequest) _currentTrack = previousTrack;
+      }
+    });
   }
 
-  Future<void> stopMusic() async {
+  Future<void> stopMusic() {
+    final request = ++_musicRequest;
     _currentTrack = null;
-    try {
-      await _musicPlayer.stop();
-    } catch (_) {}
+    return _musicOperation = _musicOperation.then((_) async {
+      if (request != _musicRequest) return;
+      try {
+        await _musicPlayer.stop();
+      } catch (_) {}
+    });
   }
 
   /// Pauses the music bed without forgetting the current track (unlike
   /// [stopMusic]) -- meant for the app going into the background, where
   /// nothing else would ever stop it otherwise (see [_HalfBlockPyramidApp]'s
-  /// lifecycle observer): the same continuous menu/gameplay track is by
-  /// design never interrupted by in-app navigation, but it has no business
-  /// still playing (and draining battery) while the app isn't in front.
+  /// lifecycle observer). Route changes may swap tracks, but neither should
+  /// continue playing (and draining battery) while the app isn't in front.
   Future<void> pauseMusic() async {
     try {
       await _musicPlayer.pause();

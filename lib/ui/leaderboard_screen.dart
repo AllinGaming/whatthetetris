@@ -5,11 +5,12 @@ import '../services/daily_challenge_service.dart';
 import '../services/leaderboard_service.dart';
 import 'widgets/neon_text.dart';
 
-/// Per-mode leaderboards (docs/GDD.md SS6.6), backed by [LeaderboardService]
-/// — scores only ever reach Firestore via the server-side `submitScore`
-/// Cloud Function, never a direct client write (see firestore.rules).
-/// Renders an honest "not available yet" state rather than an empty/broken
-/// screen when live services aren't configured.
+enum _LeaderboardBoard { classic, daily, multiplayer }
+
+/// Per-mode leaderboards (docs/GDD.md SS6.6), backed by [LeaderboardService].
+/// Only a new local best is submitted, and Firestore rules limit direct writes
+/// to the authenticated player's own increasing score (see firestore.rules).
+/// Renders an offline state when Firebase Auth is unavailable.
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key, required this.leaderboard});
 
@@ -20,33 +21,42 @@ class LeaderboardScreen extends StatefulWidget {
 }
 
 class _LeaderboardScreenState extends State<LeaderboardScreen> {
-  GameMode _selected = GameMode.classic;
+  _LeaderboardBoard _selected = _LeaderboardBoard.classic;
   late Future<List<LeaderboardEntry>> _entries;
 
-  static const _leaderboardModes = [
-    GameMode.chill,
-    GameMode.classic,
-    GameMode.arcade,
-    GameMode.sprint,
-    GameMode.ultra,
-    GameMode.daily,
-  ];
+  static const _leaderboardBoards = _LeaderboardBoard.values;
 
   /// Daily Challenge scores live in their own per-day collection rather
   /// than the mode's all-time one (see [LeaderboardService.fetchTop]) --
   /// [GameScreen] already submits them this way, but until now nothing ever
   /// fetched them back, so a whole day's worth of daily submissions was
   /// effectively write-only.
-  Future<List<LeaderboardEntry>> _fetch(GameMode mode) {
-    if (mode == GameMode.daily) {
-      return widget.leaderboard.fetchTop(
-        mode: mode,
+  Future<List<LeaderboardEntry>> _fetch(
+    _LeaderboardBoard board, {
+    bool forceRefresh = false,
+  }) {
+    return switch (board) {
+      _LeaderboardBoard.classic => widget.leaderboard.fetchTop(
+        mode: GameMode.chill,
+        forceRefresh: forceRefresh,
+      ),
+      _LeaderboardBoard.daily => widget.leaderboard.fetchTop(
+        mode: GameMode.daily,
         isDaily: true,
         dailySeed: DailyChallengeService.seedForToday(),
-      );
-    }
-    return widget.leaderboard.fetchTop(mode: mode);
+        forceRefresh: forceRefresh,
+      ),
+      _LeaderboardBoard.multiplayer => widget.leaderboard.fetchTopMultiplayer(
+        forceRefresh: forceRefresh,
+      ),
+    };
   }
+
+  String _label(_LeaderboardBoard board) => switch (board) {
+    _LeaderboardBoard.classic => 'Classic',
+    _LeaderboardBoard.daily => 'Daily Challenge',
+    _LeaderboardBoard.multiplayer => '2 Player',
+  };
 
   @override
   void initState() {
@@ -54,10 +64,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     _entries = _fetch(_selected);
   }
 
-  void _selectMode(GameMode mode) {
+  void _selectBoard(_LeaderboardBoard board, {bool forceRefresh = false}) {
     setState(() {
-      _selected = mode;
-      _entries = _fetch(mode);
+      _selected = board;
+      _entries = _fetch(board, forceRefresh: forceRefresh);
     });
   }
 
@@ -70,6 +80,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           'Leaderboards',
           style: TextStyle(shadows: neonShadows(accent, intensity: 0.6)),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: () => _selectBoard(_selected, forceRefresh: true),
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
       ),
       body: SafeArea(
         child: Center(
@@ -81,15 +98,17 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                     padding: const EdgeInsets.all(20),
                     child: Column(
                       children: [
+                        _PlayerStatus(leaderboard: widget.leaderboard),
+                        const SizedBox(height: 16),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
                           children: [
-                            for (final mode in _leaderboardModes)
+                            for (final board in _leaderboardBoards)
                               ChoiceChip(
-                                label: Text(mode.config.label),
-                                selected: _selected == mode,
-                                onSelected: (_) => _selectMode(mode),
+                                label: Text(_label(board)),
+                                selected: _selected == board,
+                                onSelected: (_) => _selectBoard(board),
                               ),
                           ],
                         ),
@@ -119,6 +138,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                                     const Divider(color: Colors.white12),
                                 itemBuilder: (context, i) {
                                   final entry = entries[i];
+                                  final isYou = widget.leaderboard
+                                      .isCurrentPlayer(entry.uid);
                                   return ListTile(
                                     leading: Text(
                                       '#${i + 1}',
@@ -128,16 +149,26 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                                       ),
                                     ),
                                     title: Text(
-                                      entry.score.toString(),
+                                      isYou ? 'You' : 'Player',
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                    trailing: Text(
-                                      'Lvl ${entry.level}',
+                                    subtitle: Text(
+                                      _selected == _LeaderboardBoard.multiplayer
+                                          ? 'Shared-board team best'
+                                          : 'Level ${entry.level}',
                                       style: const TextStyle(
                                         color: Colors.white54,
+                                      ),
+                                    ),
+                                    trailing: Text(
+                                      entry.score.toString(),
+                                      style: TextStyle(
+                                        color: isYou ? accent : Colors.white70,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                   );
@@ -156,6 +187,43 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 }
 
+class _PlayerStatus extends StatelessWidget {
+  const _PlayerStatus({required this.leaderboard});
+
+  final LeaderboardService leaderboard;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.05),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.white12),
+    ),
+    child: Row(
+      children: [
+        Icon(
+          leaderboard.currentPlayerIsAnonymous
+              ? Icons.person_outline
+              : Icons.verified_user_outlined,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            (leaderboard.currentPlayerIsAnonymous
+                    ? 'Anonymous player '
+                    : 'Linked player ') +
+                leaderboard.currentPlayerShortId,
+            style: const TextStyle(color: Colors.white70),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 class _NotAvailableYet extends StatelessWidget {
   const _NotAvailableYet();
 
@@ -169,13 +237,13 @@ class _NotAvailableYet extends StatelessWidget {
           Icon(Icons.leaderboard_outlined, size: 48, color: Colors.white38),
           SizedBox(height: 16),
           Text(
-            "Leaderboards aren't available yet.",
+            "Leaderboards aren't available right now.",
             style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
           ),
           SizedBox(height: 8),
           Text(
-            'Every mode is still fully playable in the meantime — this '
-            'screen will come alive once live services are configured.',
+            'Classic and Daily remain fully playable offline. An active '
+            'Firebase player is required for online rankings and 2 Player.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white54, fontSize: 13),
           ),

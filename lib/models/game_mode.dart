@@ -9,7 +9,7 @@ enum GameMode { chill, classic, arcade, sprint, ultra, zen, daily }
 /// still has as a fallback (docs/GDD.md SS5).
 enum EndCondition {
   /// Ends only by topping out (Classic, Arcade) or never in practice
-  /// because [GameModeConfig.softFloor] prevents topping out (Chill, Zen).
+  /// because [GameModeConfig.softFloor] prevents topping out (Zen).
   topOut,
 
   /// Ends the instant [GameModeConfig.lineTarget] lines are cleared.
@@ -18,10 +18,10 @@ enum EndCondition {
   /// Ends when [GameModeConfig.timeLimit] elapses.
   timeLimit,
 
-  /// Ends — as a win — the instant every cell on the board is empty again.
-  /// Pairs with a board that [GameModeConfig.startsPrefilled], since an
-  /// empty-starting board would already satisfy this on the first frame.
-  boardCleared,
+  /// Ends — as a win — once the locked stack occupies no more than one row.
+  /// Pairs with a board that [GameModeConfig.startsPrefilled] with at least
+  /// two occupied rows.
+  boardReducedToOneRow,
 }
 
 /// Groups modes for the mode-select screen (docs/GDD.md SS5): Marathon,
@@ -57,12 +57,11 @@ class GameModeConfig {
   final Duration Function(int level, int speedBoost) speedCurve;
 
   /// Board height. Every mode keeps the standard 20 except Daily, which
-  /// shrinks it to keep its prefilled puzzle (half the board) smaller and
-  /// less overwhelming to fully clear.
+  /// shrinks it to keep its prefilled puzzle smaller and easier to read.
   final int rows;
 
-  /// Board width. Chill and Daily use a narrower board (readability for
-  /// Chill, an easier puzzle for Daily); every other mode keeps the
+  /// Board width. The player-facing Classic and Daily use a narrower board
+  /// (readability for Classic, an easier puzzle for Daily); other modes keep the
   /// standard 10.
   final int cols;
 
@@ -83,33 +82,33 @@ class GameModeConfig {
   /// (see DailyChallengeService.seedForToday) instead of a random draw.
   final bool useDailySeed;
 
-  /// If true, the board starts roughly half-filled with a deterministic
+  /// If true, the board starts partially filled with a deterministic
   /// puzzle layout (same seed as [useDailySeed]) instead of empty, and the
-  /// run is won by clearing it back down to nothing — see
-  /// [EndCondition.boardCleared].
+  /// run is won by reducing the locked stack to one occupied row — see
+  /// [EndCondition.boardReducedToOneRow].
   final bool startsPrefilled;
 
   static const chill = GameModeConfig(
-    label: 'Chill',
+    // Keep the existing enum/storage key so current Chill players retain
+    // their local bests while the player-facing mode becomes Classic.
+    label: 'Classic',
     description:
-        'The easy on-ramp: a narrower board, five simpler shapes, and a '
-        'speed curve that actually levels off instead of climbing forever. '
-        'Play at your own pace — the board clears space instead of ending '
-        'your run.',
+        'Relaxed endless play on a narrower board with five familiar shapes. '
+        'The pace levels off, but reaching the top still ends the game.',
     category: ModeCategory.marathon,
     hasCavityFiller: true,
     hasManualSpeedBoost: false,
     speedCurve: SpeedCurve.chill,
     cols: 8,
     pieceNames: ['I4', 'O4', 'T4', 'L4', 'J4'],
-    softFloor: true,
+    softFloor: false,
     startingCavityCharges: 2,
   );
 
   static const classic = GameModeConfig(
-    label: 'Classic',
+    label: 'Legacy Classic',
     description:
-        'Straight Tetris pacing on a steady, predictable speed curve. '
+        'Straight falling-block pacing on a steady, predictable speed curve. '
         'Cavity fillers included — no speed-boost stacking.',
     category: ModeCategory.marathon,
     hasCavityFiller: true,
@@ -170,17 +169,19 @@ class GameModeConfig {
   static const daily = GameModeConfig(
     label: 'Daily Challenge',
     description:
-        'A half-filled board, the same one for everyone who plays today — '
-        'clear it completely to win. Come back tomorrow for a new layout.',
+        'A new formation up to 7 rows high, shared by everyone today. Leave '
+        'only one occupied row to win, then replay to improve your score.',
     category: ModeCategory.daily,
     hasCavityFiller: true,
     hasManualSpeedBoost: false,
-    speedCurve: SpeedCurve.classic,
+    speedCurve: SpeedCurve.chill,
     rows: 16,
     cols: 8,
+    pieceNames: ['I4', 'O4', 'T4', 'L4', 'J4'],
+    startingCavityCharges: 2,
     useDailySeed: true,
     startsPrefilled: true,
-    endCondition: EndCondition.boardCleared,
+    endCondition: EndCondition.boardReducedToOneRow,
   );
 }
 

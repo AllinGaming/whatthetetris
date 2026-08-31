@@ -8,6 +8,26 @@ import 'package:whatthetetris/services/high_score_service.dart';
 import 'package:whatthetetris/services/stats_service.dart';
 
 void main() {
+  test(
+    'legacy four-line-clear totals migrate without losing progress',
+    () async {
+      SharedPreferences.setMockInitialValues({'stats_total_tetrises': 7});
+      final stats = await StatsService.create();
+
+      expect(stats.totalFourLineClears, 7);
+      await stats.recordRun(
+        mode: GameMode.classic,
+        linesCleared: 4,
+        fourLineClears: 1,
+        fusionBonuses: 0,
+        bestCombo: 0,
+        bestBackToBack: 0,
+        playtimeMs: 1000,
+      );
+      expect(stats.totalFourLineClears, 8);
+    },
+  );
+
   test('recordRun accumulates lifetime totals and tracks bests', () async {
     SharedPreferences.setMockInitialValues({});
     final stats = await StatsService.create();
@@ -15,7 +35,7 @@ void main() {
     await stats.recordRun(
       mode: GameMode.classic,
       linesCleared: 10,
-      tetrises: 1,
+      fourLineClears: 1,
       fusionBonuses: 2,
       bestCombo: 3,
       bestBackToBack: 1,
@@ -26,7 +46,7 @@ void main() {
     await stats.recordRun(
       mode: GameMode.arcade,
       linesCleared: 5,
-      tetrises: 0,
+      fourLineClears: 0,
       fusionBonuses: 1,
       bestCombo: 1,
       bestBackToBack: 0,
@@ -37,7 +57,7 @@ void main() {
 
     expect(stats.gamesPlayed, 2);
     expect(stats.totalLinesCleared, 15);
-    expect(stats.totalTetrises, 1);
+    expect(stats.totalFourLineClears, 1);
     expect(stats.totalFusionBonuses, 3);
     expect(stats.bestComboEver, 3); // max across runs, not sum
     expect(stats.bestBackToBackEver, 1);
@@ -64,7 +84,7 @@ void main() {
     await stats.recordRun(
       mode: GameMode.classic,
       linesCleared: 1,
-      tetrises: 0,
+      fourLineClears: 0,
       fusionBonuses: 0,
       bestCombo: 0,
       bestBackToBack: 0,
@@ -101,7 +121,7 @@ void main() {
     await stats.recordRun(
       mode: GameMode.classic,
       linesCleared: 0,
-      tetrises: 0,
+      fourLineClears: 0,
       fusionBonuses: 0,
       bestCombo: 0,
       bestBackToBack: 0,
@@ -177,7 +197,7 @@ void main() {
     await stats.recordRun(
       mode: GameMode.classic,
       linesCleared: 0,
-      tetrises: 0,
+      fourLineClears: 0,
       fusionBonuses: 0,
       bestCombo: 0,
       bestBackToBack: 0,
@@ -205,7 +225,7 @@ void main() {
     await stats.recordRun(
       mode: GameMode.classic,
       linesCleared: 0,
-      tetrises: 0,
+      fourLineClears: 0,
       fusionBonuses: 0,
       bestCombo: 0,
       bestBackToBack: 4,
@@ -216,7 +236,7 @@ void main() {
     await stats.recordRun(
       mode: GameMode.classic,
       linesCleared: 0,
-      tetrises: 0,
+      fourLineClears: 0,
       fusionBonuses: 0,
       bestCombo: 0,
       bestBackToBack: 5,
@@ -241,7 +261,7 @@ void main() {
     await stats.recordRun(
       mode: GameMode.classic,
       linesCleared: 0,
-      tetrises: 0,
+      fourLineClears: 0,
       fusionBonuses: 0,
       bestCombo: 0,
       bestBackToBack: 0,
@@ -253,7 +273,7 @@ void main() {
     await stats.recordRun(
       mode: GameMode.classic,
       linesCleared: 0,
-      tetrises: 0,
+      fourLineClears: 0,
       fusionBonuses: 0,
       bestCombo: 0,
       bestBackToBack: 0,
@@ -284,7 +304,7 @@ void main() {
       expect(classicGrinder.isUnlocked(ctx), isFalse);
       expect(zenMaster.isUnlocked(ctx), isFalse);
 
-      await highScores.submitRun(GameMode.classic, score: 0, level: 20);
+      await highScores.submitRun(GameMode.chill, score: 0, level: 20);
       expect(classicGrinder.isUnlocked(ctx), isTrue);
       expect(zenMaster.isUnlocked(ctx), isFalse);
 
@@ -308,7 +328,7 @@ void main() {
     await stats.recordRun(
       mode: GameMode.arcade,
       linesCleared: 0,
-      tetrises: 0,
+      fourLineClears: 0,
       fusionBonuses: 0,
       bestCombo: 0,
       bestBackToBack: 0,
@@ -321,7 +341,7 @@ void main() {
     await stats.recordRun(
       mode: GameMode.arcade,
       linesCleared: 0,
-      tetrises: 0,
+      fourLineClears: 0,
       fusionBonuses: 0,
       bestCombo: 0,
       bestBackToBack: 0,
@@ -334,7 +354,7 @@ void main() {
     await stats.recordRun(
       mode: GameMode.arcade,
       linesCleared: 0,
-      tetrises: 0,
+      fourLineClears: 0,
       fusionBonuses: 0,
       bestCombo: 0,
       bestBackToBack: 0,
@@ -382,7 +402,7 @@ void main() {
         await stats.recordRun(
           mode: GameMode.classic,
           linesCleared: 0,
-          tetrises: 0,
+          fourLineClears: 0,
           fusionBonuses: 0,
           bestCombo: 0,
           bestBackToBack: 0,
@@ -405,7 +425,7 @@ void main() {
     await stats.recordRun(
       mode: GameMode.classic,
       linesCleared: 0,
-      tetrises: 0,
+      fourLineClears: 0,
       fusionBonuses: 0,
       bestCombo: 0,
       bestBackToBack: 0,
@@ -423,7 +443,7 @@ void main() {
     await stats.recordRun(
       mode: GameMode.classic,
       linesCleared: 1,
-      tetrises: 0,
+      fourLineClears: 0,
       fusionBonuses: 0,
       bestCombo: 0,
       bestBackToBack: 0,

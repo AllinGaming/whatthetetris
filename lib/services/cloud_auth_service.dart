@@ -1,162 +1,165 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../firebase_options.dart';
 
-/// Anonymous-by-default identity (docs/TECHNICAL_ARCHITECTURE.md SS3): every
-/// install gets a silent anonymous account with no UI, ever. Linking to
-/// Apple/Google is purely optional, offered from Settings as "back up my
-/// progress" — never required to play.
+enum EmailAuthResult {
+  success,
+  invalidEmail,
+  invalidCredentials,
+  weakPassword,
+  emailAlreadyInUse,
+  tooManyRequests,
+  networkError,
+  unavailable,
+  failed,
+}
+
+/// Anonymous-by-default identity: every configured web player gets a silent
+/// anonymous Firebase account. Login is optional and uses email/password.
 ///
-/// Every method here is a no-op (or returns a clear failure) when
-/// [isFirebaseConfigured] is false, so the rest of the app never needs to
-/// know whether live services actually exist yet.
+/// Methods fail closed when Firebase is unavailable. Configured web builds use
+/// this identity for leaderboards and multiplayer; native remains disabled.
 class CloudAuthService extends ChangeNotifier {
   User? _user;
   bool _available = false;
+  StreamSubscription<User?>? _authSubscription;
 
-  /// True once anonymous sign-in has actually succeeded against a real
-  /// Firebase project. False for the placeholder config, or if the device
-  /// has no network the first time it's ever launched.
   bool get available => _available;
-
   User? get currentUser => _user;
   String? get uid => _user?.uid;
+  String? get email => _user?.email;
+  bool get isAnonymous => _user?.isAnonymous ?? true;
 
-  /// True once the anonymous credential has been linked to a real
-  /// provider (Apple/Google) — meaning progress can be restored on another
-  /// device, not just recovered on this one.
-  bool get isBackedUp => _user?.providerData.isNotEmpty ?? false;
+  String get shortPlayerId {
+    final value = uid;
+    if (value == null || value.isEmpty) return 'OFFLINE';
+    final length = value.length < 6 ? value.length : 6;
+    return value.substring(0, length).toUpperCase();
+  }
 
-  List<String> get linkedProviders =>
-      _user?.providerData.map((p) => p.providerId).toList() ?? const [];
-
-  /// Silently signs in anonymously on first call. Safe to call every app
-  /// launch — Firebase Auth persists the session, so this is a no-op
-  /// after the first real launch.
+  /// Silently signs in anonymously on first launch. Firebase Auth persists the
+  /// session, so later launches recover the same anonymous or email account.
   Future<void> initialize() async {
     if (!isFirebaseConfigured) return;
     try {
       final auth = FirebaseAuth.instance;
-      auth.authStateChanges().listen((user) {
+      _authSubscription = auth.authStateChanges().listen((user) {
         _user = user;
+        _available = user != null;
         notifyListeners();
       });
       _user = auth.currentUser ?? (await auth.signInAnonymously()).user;
-      _available = true;
+      _available = _user != null;
     } catch (_) {
-      // No network on first launch, or the placeholder config — either
-      // way, the app must keep working fully offline/local.
+      // Offline first launch or unavailable Firebase must not block play.
       _available = false;
     }
     notifyListeners();
   }
 
-  /// Links the current (anonymous) session to a Google account so progress
-  /// survives a reinstall. Returns false rather than throwing on any
-  /// failure — callers show a plain "couldn't back up right now" message.
-  Future<bool> linkWithGoogle() async {
-    if (!_available || _user == null) return false;
+  /// Links a new email/password credential to the current anonymous player,
+  /// preserving its UID and existing leaderboard entries.
+  Future<EmailAuthResult> createEmailAccount({
+    required String email,
+    required String password,
+  }) async {
+    if (!isFirebaseConfigured || !_available || _user == null) {
+      return EmailAuthResult.unavailable;
+    }
     try {
-      final googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) return false; // user cancelled
-      final googleAuth = await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
+      final credential = EmailAuthProvider.credential(
+        email: email.trim(),
+        password: password,
       );
-      await _user!.linkWithCredential(credential);
-      return true;
-    } catch (_) {
-      return false;
+      final result = _user!.isAnonymous
+          ? await _user!.linkWithCredential(credential)
+          : await FirebaseAuth.instance.createUserWithEmailAndPassword(
+              email: email.trim(),
+              password: password,
+            );
+      _user = result.user;
+      _available = _user != null;
+      notifyListeners();
+      try {
+        await _user?.sendEmailVerification();
+      } catch (_) {
+        // The account exists even if the verification email could not send.
+      }
+      return _user == null ? EmailAuthResult.failed : EmailAuthResult.success;
+    } catch (error) {
+      return _emailFailure(error);
     }
   }
 
-  /// Links the current (anonymous) session to Sign in with Apple. Ships
-  /// alongside [linkWithGoogle], not staggered after it — offering Google
-  /// sign-in on iOS without also offering Apple violates App Store Review
-  /// Guideline 4.8 (docs/TECHNICAL_ARCHITECTURE.md SS6).
-  Future<bool> linkWithApple() async {
-    if (!_available || _user == null) return false;
+  /// Restores an existing email/password identity and its leaderboard UID.
+  /// Scores and settings remain device-local while cloud backup is disabled.
+  Future<EmailAuthResult> loginWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    if (!isFirebaseConfigured) return EmailAuthResult.unavailable;
     try {
-      final appleCredential = await SignInWithApple.getAppleIDCredential(
-        scopes: [
-          AppleIDAuthorizationScopes.email,
-          AppleIDAuthorizationScopes.fullName,
-        ],
-      );
-      final oauthCredential = OAuthProvider('apple.com').credential(
-        idToken: appleCredential.identityToken,
-        accessToken: appleCredential.authorizationCode,
-      );
-      await _user!.linkWithCredential(oauthCredential);
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  /// Signs in with the provider credential (not link — this device's
-  /// throwaway anonymous session is discarded in favor of the account that
-  /// credential already belongs to), as the first step of restoring
-  /// progress on a new/reinstalled device.
-  ///
-  /// This alone does NOT pull saved progress back down: [CloudBackupService]
-  /// currently only ever pushes local saves up (see its own doc comment) —
-  /// there is no corresponding read-and-merge-into-`SharedPreferences` path
-  /// yet, and nothing in the UI calls this method today. Wire up an actual
-  /// pull/merge step here before surfacing a "restore" affordance to
-  /// players, or this will silently sign them into the right account while
-  /// leaving all their local scores/stats at zero.
-  Future<bool> restoreWithGoogle() async {
-    if (!isFirebaseConfigured) return false;
-    try {
-      final googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) return false;
-      final googleAuth = await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-      final result = await FirebaseAuth.instance.signInWithCredential(
-        credential,
+      final result = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
       );
       _user = result.user;
+      _available = _user != null;
       notifyListeners();
-      return true;
-    } catch (_) {
-      return false;
+      return _user == null ? EmailAuthResult.failed : EmailAuthResult.success;
+    } catch (error) {
+      return _emailFailure(error);
     }
   }
 
-  Future<bool> restoreWithApple() async {
+  Future<EmailAuthResult> sendPasswordReset(String email) async {
+    if (!isFirebaseConfigured) return EmailAuthResult.unavailable;
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email.trim());
+      return EmailAuthResult.success;
+    } catch (error) {
+      return _emailFailure(error);
+    }
+  }
+
+  EmailAuthResult _emailFailure(Object error) {
+    if (error is! FirebaseAuthException) return EmailAuthResult.failed;
+    return switch (error.code) {
+      'invalid-email' => EmailAuthResult.invalidEmail,
+      'weak-password' => EmailAuthResult.weakPassword,
+      'email-already-in-use' ||
+      'credential-already-in-use' => EmailAuthResult.emailAlreadyInUse,
+      'wrong-password' ||
+      'user-not-found' ||
+      'invalid-credential' ||
+      'invalid-login-credentials' => EmailAuthResult.invalidCredentials,
+      'too-many-requests' => EmailAuthResult.tooManyRequests,
+      'network-request-failed' => EmailAuthResult.networkError,
+      'operation-not-allowed' => EmailAuthResult.unavailable,
+      _ => EmailAuthResult.failed,
+    };
+  }
+
+  /// Logs out of an email account and starts a fresh anonymous identity.
+  Future<bool> useNewAnonymousAccount() async {
     if (!isFirebaseConfigured) return false;
     try {
-      final appleCredential = await SignInWithApple.getAppleIDCredential(
-        scopes: [AppleIDAuthorizationScopes.email],
-      );
-      final oauthCredential = OAuthProvider('apple.com').credential(
-        idToken: appleCredential.identityToken,
-        accessToken: appleCredential.authorizationCode,
-      );
-      final result = await FirebaseAuth.instance.signInWithCredential(
-        oauthCredential,
-      );
+      final auth = FirebaseAuth.instance;
+      await auth.signOut();
+      final result = await auth.signInAnonymously();
       _user = result.user;
+      _available = _user != null;
       notifyListeners();
-      return true;
+      return _user != null;
     } catch (_) {
       return false;
     }
   }
 
-  /// Deletes the Firebase Auth user. The corresponding Firestore document
-  /// tree is removed by [CloudBackupService.deleteAllData] — call that
-  /// first, since a deleted user can no longer authenticate the request.
-  /// Required the moment account linking exists (App Store Review
-  /// Guideline 5.1.1(v)), not optional polish.
+  /// Reserved for the future complete online-data deletion workflow.
   Future<bool> deleteAccount() async {
     if (_user == null) return false;
     try {
@@ -167,5 +170,11 @@ class CloudAuthService extends ChangeNotifier {
     } catch (_) {
       return false;
     }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_authSubscription?.cancel());
+    super.dispose();
   }
 }

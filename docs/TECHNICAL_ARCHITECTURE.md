@@ -1,34 +1,34 @@
 # Technical Architecture — Live Services
 
-**Status:** Implemented and tested, but inert — every service described below exists in code (`lib/services/cloud_auth_service.dart`, `cloud_backup_service.dart`, `analytics_service.dart`, `purchase_service.dart`, `leaderboard_service.dart`, `functions/src/index.ts`, `firestore.rules`) and degrades safely against the placeholder config in `lib/firebase_options.dart`. Nothing here can actually reach a network until a real Firebase project and RevenueCat account exist — see `docs/ROADMAP.md` Phase 3/4 for exactly what's done vs. still open.
-**Scope:** Analytics, anonymous accounts + cloud backup, RevenueCat subscriptions, and the store-publishing implications of all three.
+**Status:** Active on web for Firebase Analytics, anonymous accounts with optional email/password login, authenticated Classic/Daily/2 Player leaderboards, and anonymous 2 Player signaling in the production `whatthetetris` project. Cloud backup, RevenueCat, Crashlytics, and native Firebase platforms remain disabled.
+**Scope:** Analytics, anonymous accounts + cloud backup, room-code WebRTC co-op, RevenueCat subscriptions, and the store-publishing implications of these services.
 **Companion docs:** [GDD.md](GDD.md) · [MONETIZATION.md](MONETIZATION.md) · [ROADMAP.md](ROADMAP.md)
 
-**This is a serverless architecture, by deliberate choice.** Nowhere in this document does anyone provision, patch, or scale a server. Firebase is a Backend-as-a-Service — Google runs and scales it; the app talks to it directly over the Firebase SDKs. RevenueCat is a managed SaaS for subscription/entitlement handling — no server of ours sits in that path either. The one piece of custom logic (§4's score-validation function) is itself a *serverless function*: a small piece of code Firebase runs on demand and bills per-invocation, not a process anyone hosts, restarts, or monitors uptime for. "Backend" in this doc means "a managed cloud service the app calls," never "infrastructure we operate."
+The implementation inventory includes `CloudAuthService`, `LeaderboardService`, `MultiplayerSessionService`, `CoopGameEngine`, and their Firestore rules. Production web enables Analytics, accounts, lightweight leaderboards, and multiplayer; Cloud Functions, cloud backup, RevenueCat, and native Firebase remain disabled.
 
-This is a genuinely greenfield integration: the survey of the current codebase found zero existing analytics, auth, backend, or IAP packages (`pubspec.yaml` has only `shared_preferences` beyond Flutter itself), and `PRIVACY.md` currently makes an explicit promise of no accounts/ads/analytics/server calls. Every recommendation below assumes that promise gets **honestly rewritten**, not quietly broken — see §7.
+**This is a managed-services architecture, by deliberate choice.** Nowhere in this document does anyone provision, patch, or scale a server. Firebase is a Backend-as-a-Service — Google runs and scales it, while the app talks directly to Auth, Analytics, and Firestore through client SDKs. The active web game deploys no custom Cloud Functions.
+
+This began as a greenfield integration. The privacy policy has now been revised alongside web activation to disclose Analytics, anonymous and email/password Auth, Firestore signaling, and peer-to-peer gameplay data — see §7.
 
 ## 1. Platform choice: Firebase
 
-Chosen over Supabase for this project because: native, first-party RevenueCat integration (no custom webhook glue required for the common path), a free tier that comfortably covers this game's expected scale pre-revenue, and one vendor covering auth + database + analytics + crash reporting + remote config + app check, which minimizes the number of new systems a two-person-or-solo team has to operate. Both Firebase and RevenueCat are managed services with no self-hosted component — the "operate" here means configuring dashboards and writing client/Cloud-Function code, not running servers.
+Chosen over Supabase for this project because one vendor covers auth, database, analytics, crash reporting, remote config, and app check, minimizing the number of systems a small team must operate. Firebase is managed; the active web features use its client SDKs and security rules without custom server code.
 
 **Dependencies** — all added to `pubspec.yaml` already:
 
 | Package | Purpose | Status |
 |---|---|---|
 | `firebase_core` | Required bootstrap for all Firebase packages | Added |
-| `firebase_auth` | Anonymous sign-in + Apple/Google linking | Added, wired (`cloud_auth_service.dart`) |
+| `firebase_auth` | Anonymous sign-in + email/password login and password reset | Added, wired (`cloud_auth_service.dart`) |
 | `cloud_firestore` | Save backup, stats, leaderboards | Added, wired (`cloud_backup_service.dart`) |
 | `firebase_analytics` | Event tracking | Added, wired (`analytics_service.dart`) |
 | `firebase_crashlytics` | Crash/error reporting | Added, wired to `FlutterError.onError`/`PlatformDispatcher.instance.onError` in `main.dart` (guarded off on web, which has no Crashlytics SDK) |
 | `firebase_remote_config` | Live-tunable curves/economy without a release | Not added — still optional, add when actually needed |
-| `firebase_app_check` | Anti-abuse for Firestore/Cloud Function writes | Not added — add before production traffic, not before |
-| `cloud_functions` (client SDK) | Calling `submitScore` from the app | Added, wired (`leaderboard_service.dart`, called from `game_screen.dart._endGame`) |
-| `google_sign_in` | Account linking (Android + iOS) | Added, wired |
-| `sign_in_with_apple` | Account linking (iOS) — **required alongside Google Sign-In on iOS**, see §6 | Added, wired |
+| `firebase_app_check` | Anti-abuse for Firestore client writes | Not added — consider before production traffic |
 | `purchases_flutter` | RevenueCat SDK | Added, wired (`purchase_service.dart`) |
+| `flutter_webrtc` | Ordered peer-to-peer gameplay data channel | Added, wired (`multiplayer_session_service.dart`) |
 
-All of the above compiles and passes `flutter analyze`/`flutter test`/release web build against the placeholder config in `lib/firebase_options.dart` — see `test/live_services_test.dart` for the "degrades to a safe no-op" contract every one of these services follows.
+All packages compile against platform-aware feature flags in `lib/firebase_options.dart`: production web Analytics/Auth/multiplayer/leaderboards are enabled, while backup, RevenueCat, and native Firebase calls retain their safe no-op behavior.
 
 ## 2. Environments
 
@@ -38,21 +38,38 @@ Two Firebase projects: `whatthetetris-dev` and `whatthetetris-prod`. Use Flutter
 
 **Principle: nobody is ever forced to create an account or see a sign-in screen to play.**
 
-1. **First launch:** silent `FirebaseAuth.instance.signInAnonymously()` in the background — no UI, no interruption. This UID becomes the backup/leaderboard identity from minute one.
-2. **Local-first reads/writes stay authoritative.** `shared_preferences` continues to be the source of truth for instant, offline-safe reads (best score, settings). Firestore is a *backup*, not the primary store — the game must be fully playable with zero network connectivity, exactly as it is today.
-3. **Sync triggers:** on game-over, on app background/pause, and on a debounce timer (e.g. every 5 minutes during a long Zen/Arcade session) — push local state to `users/{uid}` if it's newer than the last synced snapshot. Conflict rule: **highest score wins per field**, never a blind overwrite, so a stale device can never erase a better score.
-4. **Optional linking (not required):** Settings screen offers "Back up my progress" → links the anonymous credential to Sign in with Apple or Google (`linkWithCredential`). This upgrades the *same* UID rather than creating a new account, so no data migration is needed on link — only on **restore to a new device** (§3.5).
-5. **Restore on a new/reinstalled device:** app signs in anonymously (new UID) as normal, then a clearly-labeled "Restore progress" button prompts Apple/Google sign-in, looks up whether that provider credential already maps to an existing Firebase UID, and if so **replaces** the fresh anonymous session with the restored account (`signInWithCredential`, discarding the throwaway anon UID). If the new device already has local progress (rare — e.g. reinstall after partial data loss), prompt a merge choice: "Keep this device's progress" vs. "Restore my synced progress" — never merge silently.
-6. **Account deletion:** Settings → "Delete my data" deletes the Firestore document tree and calls `FirebaseAuth.instance.currentUser.delete()`. Required regardless of store policy, but Apple explicitly requires an in-app account-deletion path (App Store Review Guideline 5.1.1(v)) the moment any account creation exists — anonymous auth alone likely doesn't trigger this, but the optional linking flow does, so build it at the same time as linking, not later.
+1. **First launch:** silent `FirebaseAuth.instance.signInAnonymously()` in the background — no UI, no interruption. This UID becomes the leaderboard and multiplayer identity from minute one.
+2. **Local-first progress:** `shared_preferences` remains the source of truth for instant, offline-safe best scores, settings, stats, and achievements. Cloud backup is disabled, so login does not claim to synchronize those local values.
+3. **Optional Login (implemented):** the toolbar and lobby open one Login screen with email, password, Log in, Create account, and Forgot password actions. Anonymous play remains the default and has the same leaderboard eligibility.
+4. **Create account:** `EmailAuthProvider.credential` is linked to the current anonymous user. Firebase therefore keeps the same UID and existing leaderboard entries. A verification email is requested after creation; verification is not currently required for play.
+5. **Returning devices:** `signInWithEmailAndPassword` restores that Firebase UID and its leaderboard identity. Local scores and settings remain device-local; logging into a different existing identity does not merge leaderboard documents or local saves.
+6. **Logout:** signing out immediately creates a fresh anonymous identity so multiplayer and leaderboards keep working without a forced login.
+7. **Account deletion (release blocker):** `CloudAuthService` has a deletion primitive, but the current Login UI does not expose the complete online-data deletion workflow. Add that workflow and recent-login/reauthentication handling before native store release.
 
-## 4. Leaderboards & anti-cheat (closes an existing release-checklist item)
+## 4. Lightweight leaderboards and trust boundary
 
-`docs/RELEASE_CHECKLIST.md` already states: *"Validate leaderboard submissions on a trusted service; never trust a client-provided score by itself"* and *"Define a versioned replay format containing the seed and accepted player commands."* This architecture satisfies both:
+The active implementation deliberately uses no Cloud Functions:
 
-1. **Client-side — implemented:** `lib/game/replay.dart` records `(seed, mode, ordered input events with timestamps)` for every run into a versioned local replay format. Cheap, since the piece bag already takes a seedable `Random` — it's just an input logger.
-2. **Submission — implemented, partially:** `functions/src/index.ts`'s `submitScore` callable rejects the easy cheats (a scoring run with zero recorded events, non-chronological event timestamps, an implausible sustained input rate) before writing to Firestore. **It does not yet fully re-simulate the run** to verify the score is exactly reproducible from `(seed, replay)` — that needs the deterministic game-logic module (`lib/game/game_board.dart` + `piece_bag.dart`, pure Dart with no Flutter/UI dependency) ported to or run from the Functions runtime. This is called out as a TODO directly in the function; don't advertise leaderboards as fully tamper-proof until it closes.
-3. Firestore security rules (`firestore.rules`, implemented) make `leaderboards/*` and `dailyChallenge/*` **read-only from the client**; all writes go through the Cloud Function using the Admin SDK, so no amount of client tampering can write directly to either.
-4. **Wired end-to-end:** `LeaderboardService.submitScore` (`lib/services/leaderboard_service.dart`) calls the Cloud Function from `GameScreen._endGame` for every scoring run, and `LeaderboardService.fetchTop` backs a `LeaderboardScreen` (reachable from a 🏆-adjacent icon on mode-select). Both fail closed to "no scores yet" against the placeholder config, same contract as every other live service. Daily Challenge (`lib/services/daily_challenge_service.dart`) still keeps its own honest device-local approximation described in its doc comment — the plumbing above is what a fully cross-player Daily Challenge would build on, not something it uses today.
+1. `GameScreen` calls `LeaderboardService.submitScore` only for a new local personal best. Daily compares against the best result for the current date rather than the lifetime Daily score.
+2. One Firestore transaction reads the authenticated player's entry and writes only if the new score is higher. Ordinary runs perform no leaderboard read or write. A retry can occur if Firestore detects concurrent edits.
+3. `fetchTop`/`fetchTopMultiplayer` request at most 10 documents and cache each Classic/Daily/2 Player board for the current app session. Only a successful submission or explicit Refresh causes another query.
+4. Security rules allow an authenticated player to create or increase only their own small `{score, level, updatedAt}` document. They validate the path, fields, types, ranges, server timestamp, and increasing-score direction.
+
+This minimizes Firestore usage, but it is not cheat-proof: code running on a player's device can be modified to submit a fabricated score within the allowed range. The local replay recorder remains useful groundwork, but replays are not uploaded. Trusted replay validation is still an open release-checklist item before prizes, tournaments, or claims of competitive integrity.
+
+### 4.1 Shared-code cooperative sessions
+
+`MultiplayerSessionService` uses Firestore only as a short-lived signaling rendezvous. A host creates a random six-character document and stores an SDP offer after ICE gathering, then shares the code out of band. The guest atomically claims that room and stores its gathered answer. Candidates are embedded in those two descriptions rather than written as separate documents. A successful setup therefore uses four room-document writes, and signaling listeners are cancelled once WebRTC opens the ordered data channel. No gameplay state is sent through Firestore.
+
+The host runs the authoritative `CoopGameEngine`. The guest sends only actions; the host applies both players' ordered inputs and broadcasts compact, versioned snapshots. This prevents divergent line-clear and simultaneous-lock resolution. Snapshots carry separate red/blue cavity-fill counts: each begins at one, and a line adds one only to the player whose action completed it. Each peer also derives a landing ghost locally from the same snapshot and renders only its own prediction; no extra network or Firestore traffic is required. At top-out, both peers retain the same shared score as their own local 2 Player best. A peer contacts the leaderboard only for a new local best, and the standard transaction writes only if it also beats that Firebase player's remote best. STUN is configured for development. A production TURN service is still required because direct paths cannot be established across every NAT/firewall combination.
+
+`AudioService` remains the single owner of the persisted master-mute preference. Gameplay HUDs observe that service directly through `QuickMuteButton`, so the solo desktop panel, solo mobile stats bar, 2 Player app bar, and Settings switch remain immediately consistent without duplicating audio state. Serialized track requests prevent rapid route changes from racing: menu/lobby waiting loops `tmusic.mp3` through `MusicTrack.menu`, every gameplay mode loops `zen_classic_arcade_music.mp3` through `MusicTrack.gameplay`, and route disposal restores the menu loop.
+
+### 4.2 Analytics measurement
+
+`AnalyticsService` owns a typed event taxonomy so gameplay widgets do not send arbitrary payloads. The random Firebase Auth UID is set as the Analytics user ID, allowing repeat engagement to be measured without sending the login email as an event parameter. Analytics records screens, mode/feature selection, solo starts and outcomes, Daily retries, and the multiplayer lobby-to-round funnel. Co-op movement is aggregated into per-round counts instead of producing an event for every input. Room codes, SDP/ICE signaling, board snapshots, and free text are never sent as Analytics parameters.
+
+The reporting dimensions are `mode`, `feature`, `action`, `result`, `role`, and `reason`; the useful metrics include duration, score, lines, connection wait, completed rounds, and aggregate co-op controls. Custom parameters must be registered as custom definitions in Google Analytics before they are available in Explorations and custom reports. The same schema is summarized in the README's Analytics reporting section.
 
 ## 5. Data model (Firestore) — as implemented
 
@@ -60,28 +77,35 @@ Two Firebase projects: `whatthetetris-dev` and `whatthetetris-prod`. Use Flutter
 users/{uid}
   profile: { updatedAt }
   saves: { [modeId]: { bestScore, bestLevel, bestTimeMs } }
-  stats: { gamesPlayed, totalLinesCleared, totalTetrises, totalFusionBonuses, bestComboEver, totalPlaytimeMs }
-  entitlements: { vipActive: bool, entitlementIds, productId, expiresAtMs, updatedAt }   // written ONLY by the revenueCatWebhook Cloud Function, never by the client
+  stats: { gamesPlayed, totalLinesCleared, totalFourLineClears, totalFusionBonuses, bestComboEver, totalPlaytimeMs }
+  entitlements: { vipActive: bool, entitlementIds, productId, expiresAtMs, updatedAt }   // reserved for a future trusted purchase service; VIP is disabled
 
-leaderboards/{mode}/entries/{uid}: { score, level, seed, submittedAt }   // client: read-only; write: submitScore Cloud Function only
+leaderboards/chill/entries/{uid}: { score, level, updatedAt }   // authenticated read; owner may only increase score
 
-dailyChallenge/{seed}/entries/{uid}: { score, level, seed, submittedAt }   // same write model as leaderboards; keyed by the day's seed (== the date, see DailyChallengeService.seedForToday)
+leaderboards/multiplayer/entries/{uid}: { score, level, updatedAt }   // player's best shared-team result
+
+dailyChallenge/{date}/entries/{uid}: { score, level, updatedAt }   // same owner-write model; date is YYYYMMDD
+
+multiplayerRooms/{code}: { hostUid, guestUid?, status, offer, answer?, createdAt, updatedAt, expiresAt }
 ```
 
 One deliberate deviation from an earlier sketch of this model: `saves` and `stats` live as nested maps on the single `users/{uid}` document (see `CloudBackupService`'s doc comment) rather than as a `saves/{mode}` subcollection, so a highest-value-wins merge is one transaction instead of a multi-document batch. Revisit only if per-mode documents are ever needed for finer-grained security rules.
 
-**Security rules summary (implemented, `firestore.rules`):** a user may read/write anything under their own `users/{uid}` **except `entitlements`**, enforced via `diff().affectedKeys()` on both create and update. `leaderboards` and `dailyChallenge` are collection-wide read, Cloud-Function-only write, with a hard `allow read, write: if false` default-deny on everything else.
+**Security rules summary (implemented, `firestore.rules`):** a user may read/write anything under their own `users/{uid}` **except `entitlements`**, enforced via `diff().affectedKeys()` on both create and update. `leaderboards` and `dailyChallenge` require Firebase authentication for reads and allow only the document owner to create or increase a schema-limited entry, with a hard default-deny on everything else.
 
-## 6. Apple Sign-In requirement (concrete compliance detail)
+Multiplayer room lookup requires authentication while room listing is denied. Host and guest signaling mutations are field- and role-scoped; all nested documents are denied because candidates are bundled into SDP. Room documents expire logically after two hours; production must also enable Firestore TTL on `expiresAt` for physical cleanup.
 
-If Google Sign-In is offered as an account-linking option on iOS, Apple's App Store Review Guideline 4.8 requires Sign in with Apple to be offered as an equivalent option. Build both linking paths together on iOS from day one rather than adding Google first and hitting a review rejection later — this is a known, avoidable trap.
+## 6. Email/password authentication setup
+
+The current product intentionally offers no social-login provider. In Firebase Console, enable both **Anonymous** and **Email/Password** under Authentication → Sign-in method; leave passwordless email-link login disabled. Add every production hostname, including `allingaming.github.io`, under Authentication → Settings → Authorized domains. Review the verification and password-reset templates before launch, including the sender name, support address, action URL/domain, and copy. No Cloud Function is required for account creation, login, verification-email delivery, or password reset.
 
 ## 7. Privacy policy — what has to change
 
-The current `PRIVACY.md` promise ("does not create accounts, show ads, use analytics, or send gameplay data to a server") becomes false the moment this code actually connects to a real project — **not before.** As of this writing the code exists but every service targets the placeholder config in `lib/firebase_options.dart`, so no real account is created and no real data leaves the device; `PRIVACY.md`'s claims remain factually true for the app as it actually behaves today. `PRIVACY.md` itself already flags what comes next: *"This policy must be reviewed before adding crash reporting, analytics, cloud saves, leaderboards, advertising, purchases, or any other networked service."* Treat that sentence as a hard gate on the moment a real Firebase project replaces the placeholder — do not point `lib/firebase_options.dart` at a real project without a rewritten, reviewed privacy policy alongside that change. The rewrite needs to honestly cover: anonymous identifiers and what they're linked to, what's collected by Firebase Analytics/Crashlytics, that purchases are processed by RevenueCat/the platform stores (not by us directly), how to delete data, and that none of this is sold to third parties.
+`PRIVACY.md` now discloses Analytics, anonymous and email/password Firebase accounts, authenticated leaderboard fields and direct writes, Firestore signaling, and direct WebRTC gameplay. `TERMS.md` covers accounts, leaderboard fair play, acceptable use, and online availability. Both are bundled into Settings → Legal. They remain product drafts requiring qualified legal review before broad commercial release.
 
 ## 8. Testing strategy
 
-- **Firestore emulator suite** for security-rule tests (a user cannot read another user's `entitlements`, cannot write `leaderboards` directly, etc.) — run in CI alongside the existing `flutter test`.
+- **Firestore emulator suite** for security-rule tests (a user cannot read another user's `entitlements`, write another player's entry, reduce a score, or add unexpected leaderboard fields) — run in CI alongside the existing `flutter test`.
 - **RevenueCat sandbox** (StoreKit sandbox tester + Play Billing test track) for full subscription lifecycle testing (purchase, renew, cancel, restore, refund) before any production entitlement gating ships.
 - **Replay determinism test**: extend the existing `piece_bag_test.dart` pattern — record a replay, re-simulate it, assert identical final board/score. This is the same guarantee the anti-cheat system depends on, so it should be a first-class regression test, not just a manual check.
+- **Co-op test matrix:** keep pure-Dart coverage for complementary color ownership, no-Mirror actions, snapshot round-trips, and shared top-out. Before enabling production rooms, add Firestore Emulator rule tests and run real two-device connection tests across same Wi-Fi, separate mobile networks, forced TURN, reconnect/loss, app backgrounding, and simultaneous hard drops.

@@ -7,7 +7,7 @@ class ToastData {
   final String text;
   final Color color;
 
-  /// A dramatic full-size banner (Tetris/combo callouts) instead of a
+  /// A dramatic full-size banner (four-line/combo callouts) instead of a
   /// small side-panel popup.
   final bool big;
 }

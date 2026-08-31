@@ -9,8 +9,10 @@ import '../services/audio_service.dart';
 import '../services/live_services.dart';
 import '../services/settings_service.dart';
 import '../services/theme_service.dart';
+import 'account_screen.dart';
 import 'widgets/menu_backdrop.dart';
 import 'widgets/neon_text.dart';
+import 'legal_screen.dart';
 
 /// Volume/mute, appearance, and accessibility toggles (docs/GDD.md SS6.5,
 /// SS7-SS8). Reachable from the start screen so players never have to be
@@ -334,6 +336,44 @@ class SettingsScreen extends StatelessWidget {
                             accent: accent,
                             children: [_CloudBackupSection(live: live)],
                           ),
+                          _SettingsCard(
+                            label: 'Legal',
+                            accent: accent,
+                            children: [
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(
+                                  Icons.privacy_tip_outlined,
+                                  color: Colors.white54,
+                                ),
+                                title: const Text('Privacy Policy'),
+                                trailing: const Icon(Icons.chevron_right),
+                                onTap: () => Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        LegalScreen(analytics: live.analytics),
+                                  ),
+                                ),
+                              ),
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(
+                                  Icons.description_outlined,
+                                  color: Colors.white54,
+                                ),
+                                title: const Text('Terms of Use'),
+                                trailing: const Icon(Icons.chevron_right),
+                                onTap: () => Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => LegalScreen(
+                                      analytics: live.analytics,
+                                      initialTab: 1,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -355,7 +395,7 @@ class _CloudBackupSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!live.auth.available) {
+    if (!live.backup.available) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 8),
         child: Text(
@@ -365,7 +405,7 @@ class _CloudBackupSection extends StatelessWidget {
         ),
       );
     }
-    if (live.auth.isBackedUp) {
+    if (!live.auth.isAnonymous) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
@@ -374,7 +414,7 @@ class _CloudBackupSection extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Backed up via ${live.auth.linkedProviders.join(', ')}.',
+                'Logged in with ${live.auth.email ?? 'email'}.',
                 style: const TextStyle(color: Colors.white70, fontSize: 13),
               ),
             ),
@@ -402,12 +442,10 @@ class _CloudBackupSection extends StatelessWidget {
             runSpacing: 8,
             children: [
               OutlinedButton(
-                onPressed: () => unawaited(live.auth.linkWithGoogle()),
-                child: const Text('Back up with Google'),
-              ),
-              OutlinedButton(
-                onPressed: () => unawaited(live.auth.linkWithApple()),
-                child: const Text('Back up with Apple'),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => AccountScreen(live: live)),
+                ),
+                child: const Text('Log in with email'),
               ),
             ],
           ),

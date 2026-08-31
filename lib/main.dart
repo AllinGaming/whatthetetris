@@ -32,10 +32,9 @@ void main() async {
 
   // Must never be allowed to crash startup — this game has to work fully
   // offline regardless of Firebase's state. Skipped entirely against the
-  // placeholder config (see firebase_options.dart): on iOS, Crashlytics
-  // eagerly validates the API key during FirebaseApp configuration and
-  // aborts the process with an uncatchable native NSException if it's a
-  // placeholder, so a try/catch around this call cannot protect against it.
+  // unconfigured platform (see firebase_options.dart): on iOS, Crashlytics
+  // eagerly validates API configuration and can abort with an uncatchable
+  // native exception, so the platform-aware guard must run before this call.
   if (isFirebaseConfigured) {
     try {
       await Firebase.initializeApp(
@@ -46,9 +45,8 @@ void main() async {
     }
   }
 
-  // Crashlytics has no web SDK, and must never be wired against the
-  // placeholder config — both guards keep this dead code today, exactly
-  // like every other live service, until a real Firebase project exists.
+  // Crashlytics has no web SDK and native Firebase remains unconfigured, so
+  // both guards keep it disabled while web Analytics and rooms are active.
   if (isFirebaseConfigured && !kIsWeb) {
     FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
     PlatformDispatcher.instance.onError = (error, stack) {
@@ -65,6 +63,7 @@ void main() async {
   final dailyChallenge = await DailyChallengeService.create();
   final live = await LiveServices.create();
   unawaited(live.analytics.sessionStart());
+  unawaited(live.analytics.screenViewed('mode_select'));
   runApp(
     HalfBlockPyramidApp(
       highScores: highScores,
@@ -118,25 +117,16 @@ class _HalfBlockPyramidAppState extends State<HalfBlockPyramidApp>
     super.dispose();
   }
 
-  /// Chill's calm loop is now the one music bed for the whole app (menu
-  /// included), but web browsers refuse to play audio until the very first
-  /// user gesture -- so instead of firing at app boot (which would just
-  /// fail and never retry), this waits for the first tap/click anywhere and
-  /// kicks music off then. Harmless to call again on native, where autoplay
-  /// isn't restricted.
+  /// Web browsers refuse to play audio until the first user gesture, so the
+  /// calm menu/waiting loop starts on the first tap instead of at app boot.
   void _kickMusicOnFirstTap() {
     if (_musicKicked) return;
     _musicKicked = true;
-    unawaited(widget.audio.playMusic(MusicTrack.zen));
+    unawaited(widget.audio.playMusic(MusicTrack.menu));
   }
 
-  /// The music bed is deliberately one continuous track across the menu and
-  /// every game mode (see AudioService.pauseMusic), so in-app navigation
-  /// never touches it -- but nothing was pausing it when the app itself
-  /// left the foreground (backgrounded, tab hidden), so it just kept
-  /// playing silently in the background indefinitely. This is the only
-  /// place that should stop it, since it's the only place that knows the
-  /// whole app -- not just one screen -- is no longer in front.
+  /// Nothing else knows when the whole app leaves the foreground, so keep
+  /// lifecycle pausing centralized here even though routes can change tracks.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -151,7 +141,7 @@ class _HalfBlockPyramidAppState extends State<HalfBlockPyramidApp>
     return ListenableBuilder(
       listenable: Listenable.merge([widget.theme, widget.settings]),
       builder: (context, _) => MaterialApp(
-        title: 'What The Tetris',
+        title: 'What The Triangle',
         debugShowCheckedModeBanner: false,
         navigatorObservers: [appRouteObserver],
         theme: ThemeData(

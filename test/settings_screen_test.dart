@@ -45,6 +45,9 @@ void main() {
     expect(find.text('AUDIO'), findsOneWidget);
     expect(find.text('ACCESSIBILITY'), findsOneWidget);
     expect(find.text('CLOUD BACKUP'), findsOneWidget);
+    expect(find.text('LEGAL'), findsOneWidget);
+    expect(find.text('Privacy Policy'), findsOneWidget);
+    expect(find.text('Terms of Use'), findsOneWidget);
   });
 
   testWidgets('volume and UI-scale sliders show a live percentage at rest', (

@@ -1,5 +1,5 @@
 name: whatthetetris
-description: "Neon triangle-half falling-blocks with seven modes, from a relaxed Chill on-ramp to Daily Challenge puzzles."
+description: "Neon triangle-half falling blocks with Classic, Daily Challenge, and shared-board online co-op."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -37,19 +37,15 @@ dependencies:
   shared_preferences: ^2.5.5
   audioplayers: ^6.1.0
   share_plus: ^10.1.4
+  flutter_webrtc: ^1.6.0
 
-  # Live-services layer (docs/TECHNICAL_ARCHITECTURE.md, docs/MONETIZATION.md).
-  # Serverless: Firebase and RevenueCat are managed services, nothing here is
-  # self-hosted. Inert until a real Firebase project/RevenueCat account exists
-  # — see lib/firebase_options.dart and docs/ROADMAP.md Phase 3/4.
+  # Live-services layer (docs/TECHNICAL_ARCHITECTURE.md). Web accounts,
+  # Analytics, room signaling, and minimal leaderboards use client SDKs only.
   firebase_core: ^3.8.0
   firebase_auth: ^5.3.3
   cloud_firestore: ^5.5.0
   firebase_analytics: ^11.3.5
   firebase_crashlytics: ^4.1.5
-  cloud_functions: ^5.1.3
-  google_sign_in: ^6.2.2
-  sign_in_with_apple: ^6.1.4
   purchases_flutter: ^8.6.0
 
 dev_dependencies:
@@ -81,6 +77,8 @@ flutter:
   #   - images/a_dot_ham.jpeg
   assets:
     - assets/audio/
+    - PRIVACY.md
+    - TERMS.md
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

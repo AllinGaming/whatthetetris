@@ -15,9 +15,10 @@ import '../services/live_services.dart';
 import '../services/settings_service.dart';
 import '../services/stats_service.dart';
 import '../services/theme_service.dart';
+import 'account_screen.dart';
 import 'achievements_screen.dart';
 import 'leaderboard_screen.dart';
-import 'paywall_screen.dart';
+import 'multiplayer_lobby_screen.dart';
 import 'settings_screen.dart';
 import 'widgets/fusion_hero.dart';
 import 'widgets/menu_backdrop.dart';
@@ -32,7 +33,7 @@ const _categoryOrder = [
 ];
 
 const _categoryLabels = {
-  ModeCategory.marathon: 'Marathon',
+  ModeCategory.marathon: 'Play',
   ModeCategory.timed: 'Timed',
   ModeCategory.practice: 'Practice',
   ModeCategory.daily: 'Daily',
@@ -41,9 +42,15 @@ const _categoryLabels = {
 /// Trimmed from the mode-select roster per player feedback — kept in
 /// [GameMode]/[GameModeConfig] rather than deleted, so they're a one-line
 /// change away from coming back.
-const _hiddenModes = {GameMode.arcade, GameMode.sprint, GameMode.zen};
+const _hiddenModes = {
+  GameMode.classic,
+  GameMode.arcade,
+  GameMode.sprint,
+  GameMode.ultra,
+  GameMode.zen,
+};
 
-/// Ties each mode's card to one of its own piece colors — a "tetrisy" per-
+/// Ties each mode's card to one of its own piece colors — a triangular per-
 /// mode identity for the accent bar/swatch, rather than every card looking
 /// identical apart from its text. [GameMode.daily] deliberately has no
 /// entry: as the one special, non-marathon/timed/practice mode, it uses the
@@ -78,6 +85,7 @@ class StartScreen extends StatelessWidget {
   final LiveServices live;
 
   Future<void> _showTutorial(BuildContext context) async {
+    unawaited(live.analytics.featureSelected('tutorial'));
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => TutorialLevelScreen(settings: settings),
@@ -113,6 +121,7 @@ class StartScreen extends StatelessWidget {
       ),
     );
     if (confirmed == true) {
+      unawaited(live.analytics.settingsChanged('piece_color_mode', 'random'));
       await settings.setPieceColorMode(PieceColorMode.random);
     }
   }
@@ -175,7 +184,7 @@ class StartScreen extends StatelessWidget {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'What The Tetris',
+                                'What The Triangle',
                                 textAlign: TextAlign.center,
                                 style: Theme.of(context)
                                     .textTheme
@@ -197,57 +206,77 @@ class StartScreen extends StatelessWidget {
                                   _ToolbarItem(
                                     icon: Icons.emoji_events_outlined,
                                     tooltip: 'Stats & Achievements',
-                                    onPressed: () => Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (_) => AchievementsScreen(
-                                          stats: stats,
-                                          highScores: highScores,
-                                          dailyChallenge: dailyChallenge,
+                                    onPressed: () {
+                                      unawaited(
+                                        live.analytics.featureSelected(
+                                          'stats_achievements',
                                         ),
-                                      ),
-                                    ),
+                                      );
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => AchievementsScreen(
+                                            stats: stats,
+                                            highScores: highScores,
+                                            dailyChallenge: dailyChallenge,
+                                          ),
+                                        ),
+                                      );
+                                    },
                                   ),
                                   _ToolbarItem(
                                     icon: Icons.leaderboard_outlined,
                                     tooltip: 'Leaderboards',
-                                    onPressed: () => Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (_) => LeaderboardScreen(
-                                          leaderboard: live.leaderboard,
+                                    onPressed: () {
+                                      unawaited(
+                                        live.analytics.featureSelected(
+                                          'leaderboards',
                                         ),
-                                      ),
-                                    ),
+                                      );
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => LeaderboardScreen(
+                                            leaderboard: live.leaderboard,
+                                          ),
+                                        ),
+                                      );
+                                    },
                                   ),
                                   _ToolbarItem(
-                                    icon: Icons.star_outline,
-                                    tooltip: 'VIP Pass',
+                                    icon: Icons.account_circle_outlined,
+                                    tooltip: 'Login',
                                     onPressed: () => Navigator.of(context).push(
                                       MaterialPageRoute(
-                                        builder: (_) => PaywallScreen(
-                                          purchases: live.purchases,
-                                        ),
+                                        builder: (_) =>
+                                            AccountScreen(live: live),
                                       ),
                                     ),
                                   ),
                                   _ToolbarItem(
                                     icon: Icons.settings,
                                     tooltip: 'Settings',
-                                    onPressed: () => Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (_) => SettingsScreen(
-                                          audio: audio,
-                                          settings: settings,
-                                          theme: theme,
-                                          live: live,
+                                    onPressed: () {
+                                      unawaited(
+                                        live.analytics.featureSelected(
+                                          'settings',
                                         ),
-                                      ),
-                                    ),
+                                      );
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => SettingsScreen(
+                                            audio: audio,
+                                            settings: settings,
+                                            theme: theme,
+                                            live: live,
+                                          ),
+                                        ),
+                                      );
+                                    },
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Triangle-half Tetris. Pick a mode to start.',
+                                'Triangle-half puzzle. Pick a mode to start.',
                                 textAlign: TextAlign.center,
                                 style: Theme.of(context).textTheme.bodyMedium
                                     ?.copyWith(color: Colors.white70),
@@ -270,9 +299,15 @@ class StartScreen extends StatelessWidget {
                                         settings.pieceColorMode ==
                                         PieceColorMode.duo,
                                     onTap: () => unawaited(
-                                      settings.setPieceColorMode(
-                                        PieceColorMode.duo,
-                                      ),
+                                      Future.wait([
+                                        live.analytics.settingsChanged(
+                                          'piece_color_mode',
+                                          'duo',
+                                        ),
+                                        settings.setPieceColorMode(
+                                          PieceColorMode.duo,
+                                        ),
+                                      ]),
                                     ),
                                   ),
                                   _ColorModeChip(
@@ -317,6 +352,17 @@ class StartScreen extends StatelessWidget {
                                   ],
                                   const SizedBox(height: 12),
                                 ],
+                              _CategoryHeader(
+                                label: 'Together',
+                                accent: accent,
+                              ),
+                              const SizedBox(height: 10),
+                              _MultiplayerModeCard(
+                                live: live,
+                                theme: theme,
+                                audio: audio,
+                                highScores: highScores,
+                              ),
                             ],
                           ),
                         ),
@@ -327,6 +373,113 @@ class StartScreen extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MultiplayerModeCard extends StatelessWidget {
+  const _MultiplayerModeCard({
+    required this.live,
+    required this.theme,
+    required this.audio,
+    required this.highScores,
+  });
+
+  final LiveServices live;
+  final ThemeService theme;
+  final AudioService audio;
+  final HighScoreService highScores;
+
+  @override
+  Widget build(BuildContext context) {
+    const red = Colors.redAccent;
+    const blue = Colors.lightBlueAccent;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: blue.withValues(alpha: 0.4)),
+        boxShadow: [
+          BoxShadow(color: red.withValues(alpha: 0.12), blurRadius: 16),
+          BoxShadow(color: blue.withValues(alpha: 0.12), blurRadius: 16),
+        ],
+      ),
+      child: Material(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () {
+            unawaited(live.analytics.featureSelected('multiplayer'));
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => MultiplayerLobbyScreen(
+                  live: live,
+                  theme: theme,
+                  audio: audio,
+                  highScores: highScores,
+                ),
+              ),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                const SizedBox(
+                  width: 54,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Icon(Icons.change_history, color: red, size: 34),
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Icon(
+                          Icons.change_history,
+                          color: blue,
+                          size: 34,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '2 Player',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Red and blue build the same board through a shared '
+                        'room-code lobby.',
+                        style: TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Best team score: ${highScores.bestMultiplayerScore}',
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Icon(Icons.group, size: 34, color: blue),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -345,7 +498,7 @@ class _ToolbarItem {
   final VoidCallback onPressed;
 }
 
-/// The secondary-nav row (tutorial/achievements/leaderboard/VIP/settings),
+/// The secondary-nav row (tutorial/stats/leaderboards/account/settings),
 /// grouped into one translucent pill rather than loose icons floating on
 /// the backdrop — reads as a single toolbar, and wraps to a second line
 /// instead of overflowing on narrow screens.
@@ -539,6 +692,13 @@ class _ModeCard extends StatelessWidget {
 
   void _play(BuildContext context) {
     unawaited(live.analytics.modeSelected(mode));
+    if (_isDaily && dailyChallenge.playedToday) {
+      unawaited(
+        live.analytics.dailyRetry(
+          previouslyCleared: dailyChallenge.todaysCleared,
+        ),
+      );
+    }
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => GameScreen(
@@ -555,39 +715,13 @@ class _ModeCard extends StatelessWidget {
     );
   }
 
-  void _onTap(BuildContext context) {
-    if (_isDaily && dailyChallenge.playedToday) {
-      showDialog<void>(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text("You've already played today"),
-          content: Text(
-            '${dailyChallenge.todaysCleared ? "You cleared today's board! 🎉\n" : ''}'
-            "Today's score: ${dailyChallenge.todaysScore ?? 0}\n"
-            'Streak: ${dailyChallenge.currentStreak} day'
-            '${dailyChallenge.currentStreak == 1 ? '' : 's'}\n'
-            'Come back tomorrow for a new board.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
-      );
-      return;
-    }
-    _play(context);
-  }
-
   @override
   Widget build(BuildContext context) {
     final cfg = mode.config;
     final themeAccent = Theme.of(context).colorScheme.primary;
     final accentPieceName = _modeAccentPiece[mode];
     // Each mode borrows one of its own piece's colors for its card — a
-    // "tetrisy" per-mode identity instead of every card looking identical.
+    // triangular identity instead of every card looking identical.
     // Daily has no single representative piece, so it keeps the app's own
     // accent, matching its special (not marathon/timed/practice) status.
     final accent = accentPieceName != null
@@ -598,10 +732,12 @@ class _ModeCard extends StatelessWidget {
         : null;
     final bestTime = highScores.bestTimeMs(mode);
     final alreadyPlayedToday = _isDaily && dailyChallenge.playedToday;
-    final statLine = alreadyPlayedToday
-        ? (dailyChallenge.todaysCleared
-              ? 'Cleared! Score: ${dailyChallenge.todaysScore ?? 0} · come back tomorrow'
-              : "Today's score: ${dailyChallenge.todaysScore ?? 0} · come back tomorrow")
+    final statLine = _isDaily
+        ? alreadyPlayedToday
+              ? (dailyChallenge.todaysCleared
+                    ? 'Cleared! Best today: ${dailyChallenge.todaysScore ?? 0} · Play again'
+                    : 'Best today: ${dailyChallenge.todaysScore ?? 0} · Play again')
+              : 'New puzzle every day · Unlimited attempts'
         : cfg.lineTarget != null && bestTime != null
         ? 'Best time: ${_formatMs(bestTime)}'
         : 'Best score: ${highScores.bestScore(mode)}   ·   Best level: ${highScores.bestLevel(mode)}';
@@ -622,7 +758,7 @@ class _ModeCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: () => _onTap(context),
+          onTap: () => _play(context),
           child: IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -644,6 +780,28 @@ class _ModeCard extends StatelessWidget {
                             // player's actual piece-color-mode setting.
                             colorMode: PieceColorMode.random,
                             colorOverride: accent,
+                          ),
+                          const SizedBox(width: 14),
+                        ] else if (_isDaily) ...[
+                          Semantics(
+                            label: 'Daily Challenge calendar',
+                            child: Container(
+                              key: const ValueKey('daily-mode-icon'),
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: accent.withValues(alpha: 0.12),
+                                border: Border.all(
+                                  color: accent.withValues(alpha: 0.45),
+                                ),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.calendar_month,
+                                color: accent,
+                                size: 28,
+                              ),
+                            ),
                           ),
                           const SizedBox(width: 14),
                         ],
@@ -703,7 +861,7 @@ class _ModeCard extends StatelessWidget {
                         const SizedBox(width: 12),
                         Icon(
                           alreadyPlayedToday
-                              ? Icons.check_circle
+                              ? Icons.replay_circle_filled
                               : Icons.play_circle_fill,
                           size: 36,
                           color: accent,

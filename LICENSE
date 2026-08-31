@@ -1,21 +1,72 @@
-MIT License
+AllinGaming Source-Available Non-Commercial License 1.0
 
-Copyright (c) 2024 allingaming
+Copyright (c) 2024-2026 AllinGaming (GitHub: @allingaming).
+All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. Definitions
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+"Software" means the source code, compiled application, documentation, game
+assets, and other original material distributed with this license, excluding
+third-party material that carries its own license.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+"Licensor" means AllinGaming (GitHub: @allingaming).
+
+"Commercial Use" means use of the Software or a modified or derivative version
+that is primarily intended for commercial advantage or monetary compensation.
+It includes selling, renting, licensing, sublicensing, monetizing, offering paid
+access to, using in a paid product or service, or distributing a version of the
+Software supported by advertising or sponsorship.
+
+2. Non-commercial permission
+
+Subject to this license, the Licensor grants permission to view, download, run,
+copy, and modify the Software, and to redistribute it or modified versions,
+solely for personal, educational, research, evaluation, or other
+non-commercial purposes, provided that:
+
+a. the use and any redistribution are not Commercial Use;
+b. this copyright notice and complete license are retained;
+c. modified versions are clearly identified as modified; and
+d. no trademark, logo, or branding rights are claimed or implied.
+
+This permission is non-exclusive, non-transferable, and non-sublicensable.
+Recipients of a permitted redistribution receive permission directly from the
+Licensor under this license, not through a sublicense.
+
+3. Commercial rights reserved
+
+Commercial Use is reserved exclusively to the Licensor. No other person or
+entity may make Commercial Use of the Software without a separate written
+commercial license or written authorization from the Licensor.
+
+4. No trademark license
+
+This license does not grant permission to use the names "AllinGaming" or
+"What the Triangle," or any associated logo, trade dress, or trademark, except
+as reasonably necessary to preserve required attribution.
+
+5. Third-party material
+
+Third-party libraries, services, fonts, tools, and other separately licensed
+material remain governed by their respective licenses. This license does not
+restrict rights granted directly by those third parties.
+
+6. Termination
+
+Rights granted under this license terminate automatically upon breach. After
+termination, the person or entity in breach must stop using and distributing
+the Software. Sections 3 through 8 survive termination.
+
+7. Disclaimer
+
+THE SOFTWARE IS PROVIDED "AS IS," WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE, TITLE, AND NON-INFRINGEMENT. TO THE MAXIMUM EXTENT PERMITTED BY LAW,
+THE LICENSOR IS NOT LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING
+FROM THE SOFTWARE OR ITS USE.
+
+8. Previously published versions
+
+This license applies to versions first published under it. It does not revoke
+permissions that were already granted for versions previously published under
+the MIT License.

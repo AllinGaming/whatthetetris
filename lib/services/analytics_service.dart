@@ -13,20 +13,62 @@ import '../models/game_mode.dart';
 /// event later means changing one method here, not hunting every call site.
 class AnalyticsService {
   FirebaseAnalytics? get _analytics =>
-      isFirebaseConfigured ? FirebaseAnalytics.instance : null;
+      isFirebaseAnalyticsConfigured ? FirebaseAnalytics.instance : null;
+
+  Map<String, Object>? _firebaseParameters(Map<String, Object>? params) =>
+      params?.map(
+        (name, value) =>
+            MapEntry(name, value is bool ? (value ? 1 : 0) : value),
+      );
 
   Future<void> _log(String name, [Map<String, Object>? params]) async {
     try {
-      await _analytics?.logEvent(name: name, parameters: params);
+      // Firebase custom events support String and numeric values, not bool.
+      // Keep call sites expressive while transmitting booleans as 1 or 0.
+      await _analytics?.logEvent(
+        name: name,
+        parameters: _firebaseParameters(params),
+      );
     } catch (_) {
       // Analytics must never be able to crash or block gameplay.
     }
   }
 
-  Future<void> sessionStart() => _log('session_start');
+  Future<void> identifyAnonymousPlayer(String? uid) async {
+    try {
+      // Firebase anonymous UIDs contain no name/email and let Analytics join
+      // this player's future events across visits on the same auth account.
+      // Passing null clears the previous ID when the player changes account.
+      await _analytics?.setUserId(id: uid);
+    } catch (_) {
+      // Identity enrichment must never affect startup or gameplay.
+    }
+  }
 
-  Future<void> modeSelected(GameMode mode) =>
-      _log('mode_selected', {'mode': mode.name});
+  Future<void> screenViewed(String screen) async {
+    try {
+      await _analytics?.logScreenView(screenName: screen, screenClass: screen);
+    } catch (_) {
+      // Screen measurement is best-effort.
+    }
+  }
+
+  Future<void> _setProperty(String name, String value) async {
+    try {
+      await _analytics?.setUserProperty(name: name, value: value);
+    } catch (_) {
+      // Audience properties are best-effort.
+    }
+  }
+
+  /// Firebase already collects its reserved `session_start` event. This
+  /// custom app event marks completion of our own startup path.
+  Future<void> sessionStart() => _log('app_opened');
+
+  Future<void> modeSelected(GameMode mode) async {
+    await _setProperty('last_mode', mode.name);
+    await _log('mode_selected', {'mode': mode.name});
+  }
 
   Future<void> gameStart(GameMode mode) =>
       _log('game_start', {'mode': mode.name});
@@ -47,9 +89,76 @@ class AnalyticsService {
     'is_new_best': isNewBest,
   });
 
+  Future<void> featureSelected(String feature) =>
+      _log('feature_selected', {'feature': feature});
+
+  Future<void> dailyRetry({required bool previouslyCleared}) =>
+      _log('daily_retry', {'previously_cleared': previouslyCleared});
+
+  Future<void> multiplayerLobbyViewed({required bool available}) =>
+      _log('multiplayer_lobby_viewed', {'available': available});
+
+  Future<void> multiplayerLobbyAction({
+    required String action,
+    required String result,
+  }) => _log('multiplayer_lobby_action', {'action': action, 'result': result});
+
+  Future<void> multiplayerConnection({
+    required String result,
+    required String role,
+    required int waitMs,
+  }) => _log('multiplayer_connection', {
+    'result': result,
+    'role': role,
+    'wait_ms': waitMs,
+  });
+
+  Future<void> multiplayerRoundStarted({
+    required String role,
+    required int roundNumber,
+  }) async {
+    await _setProperty('last_mode', 'multiplayer');
+    await _log('multiplayer_round_started', {
+      'role': role,
+      'round_number': roundNumber,
+    });
+  }
+
+  Future<void> multiplayerRoundEnded({
+    required String role,
+    required String reason,
+    required int roundNumber,
+    required int durationMs,
+    required int score,
+    required int lines,
+    required int moves,
+    required int rotations,
+    required int softDrops,
+    required int hardDrops,
+  }) => _log('multiplayer_round_ended', {
+    'role': role,
+    'reason': reason,
+    'round_number': roundNumber,
+    'duration_ms': durationMs,
+    'score': score,
+    'lines': lines,
+    'moves': moves,
+    'rotations': rotations,
+    'soft_drops': softDrops,
+    'hard_drops': hardDrops,
+  });
+
+  Future<void> multiplayerRestarted({
+    required String role,
+    required int completedRounds,
+  }) => _log('multiplayer_restarted', {
+    'role': role,
+    'completed_rounds': completedRounds,
+  });
+
   Future<void> lineClear(int count) => _log('line_clear', {'count': count});
 
-  Future<void> tetrisClear() => _log('tetris_clear');
+  Future<void> fourLineClear() => _log('four_line_clear');
 
   Future<void> fusionBonus(int fusedCells) =>
       _log('fusion_bonus', {'fused_cells': fusedCells});
@@ -66,12 +175,6 @@ class AnalyticsService {
 
   Future<void> settingsChanged(String setting, String value) =>
       _log('settings_changed', {'setting': setting, 'value': value});
-
-  Future<void> accountLinkStarted(String provider) =>
-      _log('account_link_started', {'provider': provider});
-
-  Future<void> accountLinkResult(String provider, bool success) =>
-      _log('account_link_result', {'provider': provider, 'success': success});
 
   Future<void> backupRestored(bool success) =>
       _log('backup_restore', {'success': success});

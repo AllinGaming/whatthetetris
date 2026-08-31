@@ -25,6 +25,9 @@ import 'package:whatthetetris/services/stats_service.dart';
 import 'package:whatthetetris/services/theme_service.dart';
 import 'package:whatthetetris/ui/game_side_panel.dart';
 import 'package:whatthetetris/ui/mobile_stats_bar.dart';
+import 'package:whatthetetris/ui/account_screen.dart';
+import 'package:whatthetetris/ui/leaderboard_screen.dart';
+import 'package:whatthetetris/ui/multiplayer_lobby_screen.dart';
 import 'package:whatthetetris/ui/settings_screen.dart';
 import 'package:whatthetetris/ui/start_screen.dart';
 import 'package:whatthetetris/ui/widgets/pause_menu.dart';
@@ -70,8 +73,8 @@ Future<void> _pumpApp(WidgetTester tester) async {
   );
 }
 
-/// The mode roster no longer fits the default 800x600 test viewport in one
-/// screen, so tapping a mode card needs to scroll it into view first.
+/// Tapping a mode card scrolls it into view first so this helper also works
+/// on narrow test viewports.
 Future<void> _tapMode(WidgetTester tester, String label) async {
   final finder = find.text(label);
   await tester.ensureVisible(finder);
@@ -80,10 +83,8 @@ Future<void> _tapMode(WidgetTester tester, String label) async {
   await tester.pumpAndSettle();
 }
 
-/// Arcade/Sprint/Zen were trimmed from the mode-select roster but are still
-/// fully playable in code — this pumps a [GameScreen] for one directly,
-/// bypassing start-screen navigation, for tests that exercise that mode's
-/// own mechanics rather than the mode-select UI.
+/// Hidden legacy modes remain playable in code. This pumps a [GameScreen]
+/// directly for tests of their mechanics without exposing them in the menu.
 Future<void> _pumpGameScreenDirect(
   WidgetTester tester,
   GameMode mode, {
@@ -176,20 +177,55 @@ void main() {
   ) async {
     await _pumpApp(tester);
 
-    expect(find.text('What The Tetris'), findsOneWidget);
+    expect(find.text('What The Triangle'), findsOneWidget);
     expect(find.text('Classic'), findsOneWidget);
-    expect(find.text('Chill'), findsOneWidget);
-    expect(find.text('Ultra'), findsOneWidget);
     expect(find.text('Daily Challenge'), findsOneWidget);
-    // Trimmed from the visible roster per player feedback — still fully
-    // playable in code (see _pumpGameScreenDirect), just not on this screen.
+    expect(find.byKey(const ValueKey('daily-mode-icon')), findsOneWidget);
+    expect(find.text('2 Player'), findsOneWidget);
+    expect(find.text('Best team score: 0'), findsOneWidget);
+    expect(find.text('Chill'), findsNothing);
+    expect(find.text('Legacy Classic'), findsNothing);
     expect(find.text('Arcade'), findsNothing);
     expect(find.text('Sprint'), findsNothing);
+    expect(find.text('Ultra'), findsNothing);
     expect(find.text('Zen'), findsNothing);
+    expect(find.byTooltip('Leaderboards'), findsOneWidget);
+    expect(find.byTooltip('Login'), findsOneWidget);
+    expect(find.byTooltip('VIP Pass'), findsNothing);
 
     await _tapMode(tester, 'Classic');
 
     expect(find.byType(KeyboardListener), findsOneWidget);
+  });
+
+  testWidgets('account and leaderboards are reachable from mode select', (
+    WidgetTester tester,
+  ) async {
+    await _pumpApp(tester);
+
+    await tester.tap(find.byTooltip('Login'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AccountScreen), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Leaderboards'));
+    await tester.pumpAndSettle();
+    expect(find.byType(LeaderboardScreen), findsOneWidget);
+  });
+
+  testWidgets('2 Player opens the shared room-code lobby', (
+    WidgetTester tester,
+  ) async {
+    await _pumpApp(tester);
+
+    await _tapMode(tester, '2 Player');
+
+    expect(find.byType(MultiplayerLobbyScreen), findsOneWidget);
+    expect(find.text('Build one board together'), findsOneWidget);
+    // This repository intentionally ships placeholder Firebase credentials,
+    // so the lobby is visible but honest until production config is supplied.
+    expect(find.text('Online rooms are not configured yet'), findsOneWidget);
   });
 
   testWidgets(
@@ -280,23 +316,32 @@ void main() {
     expect(find.textContaining('Speed +'), findsOneWidget);
   });
 
-  testWidgets('Chill mode starts a playable run on its narrower board', (
+  testWidgets('the Classic card launches the relaxed narrow-board rules', (
     WidgetTester tester,
   ) async {
     await _pumpApp(tester);
 
-    await _tapMode(tester, 'Chill');
+    await _tapMode(tester, 'Classic');
 
     expect(find.byType(KeyboardListener), findsOneWidget);
     expect(find.byType(GameSidePanel), findsOneWidget);
+    final painter =
+        tester
+                .widget<CustomPaint>(
+                  find.byWidgetPredicate(
+                    (widget) =>
+                        widget is CustomPaint && widget.painter is BoardPainter,
+                  ),
+                )
+                .painter
+            as BoardPainter;
+    expect(painter.board.first, hasLength(8));
   });
 
   testWidgets('Ultra mode surfaces a countdown clock in the HUD', (
     WidgetTester tester,
   ) async {
-    await _pumpApp(tester);
-
-    await _tapMode(tester, 'Ultra');
+    await _pumpGameScreenDirect(tester, GameMode.ultra);
 
     // The clock hasn't started yet during the ready countdown (below), so
     // this reads exactly "2:00" here — match the mm:ss shape generally
@@ -307,9 +352,7 @@ void main() {
   testWidgets(
     'Ultra shows a ready countdown before the clock and gravity start',
     (WidgetTester tester) async {
-      await _pumpApp(tester);
-
-      await _tapMode(tester, 'Ultra');
+      await _pumpGameScreenDirect(tester, GameMode.ultra);
 
       expect(find.text('3'), findsOneWidget);
     },
@@ -335,49 +378,43 @@ void main() {
     expect(find.textContaining('lines left'), findsOneWidget);
   });
 
-  testWidgets(
-    'Daily Challenge already played today shows a recap instead of a new run',
-    (WidgetTester tester) async {
-      _disableTestAnimations(tester);
-      SharedPreferences.setMockInitialValues({});
-      final highScores = await HighScoreService.create();
-      final audio = await AudioService.create();
-      final settings = await SettingsService.create();
-      final theme = await ThemeService.create();
-      final stats = await StatsService.create();
-      final dailyChallenge = await DailyChallengeService.create();
-      final live = await LiveServices.create();
-      await dailyChallenge.recordResult(4200);
+  testWidgets('Daily Challenge can be launched again after playing today', (
+    WidgetTester tester,
+  ) async {
+    _disableTestAnimations(tester);
+    SharedPreferences.setMockInitialValues({});
+    final highScores = await HighScoreService.create();
+    final audio = await AudioService.create();
+    final settings = await SettingsService.create();
+    final theme = await ThemeService.create();
+    final stats = await StatsService.create();
+    final dailyChallenge = await DailyChallengeService.create();
+    final live = await LiveServices.create();
+    await dailyChallenge.recordResult(4200);
 
-      await tester.pumpWidget(
-        HalfBlockPyramidApp(
-          highScores: highScores,
-          audio: audio,
-          settings: settings,
-          theme: theme,
-          stats: stats,
-          dailyChallenge: dailyChallenge,
-          live: live,
-        ),
-      );
+    await tester.pumpWidget(
+      HalfBlockPyramidApp(
+        highScores: highScores,
+        audio: audio,
+        settings: settings,
+        theme: theme,
+        stats: stats,
+        dailyChallenge: dailyChallenge,
+        live: live,
+      ),
+    );
 
-      await _tapMode(tester, 'Daily Challenge');
+    expect(find.textContaining('Best today: 4200'), findsOneWidget);
+    expect(find.byIcon(Icons.replay_circle_filled), findsOneWidget);
 
-      expect(find.text("You've already played today"), findsOneWidget);
-      expect(
-        find.descendant(
-          of: find.byType(AlertDialog),
-          matching: find.textContaining('4200'),
-        ),
-        findsOneWidget,
-      );
-      // The recap is a dialog, not a new run.
-      expect(find.byType(KeyboardListener), findsNothing);
-    },
-  );
+    await _tapMode(tester, 'Daily Challenge');
+
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byType(KeyboardListener), findsOneWidget);
+  });
 
   testWidgets(
-    'Daily Challenge starts with a pre-filled board, not an empty one',
+    'Daily Challenge starts with a bottom-aligned 2 to 7 row formation',
     (WidgetTester tester) async {
       await _pumpGameScreenDirect(tester, GameMode.daily, settle: false);
 
@@ -393,15 +430,21 @@ void main() {
                   .painter
               as BoardPainter;
 
+      final occupiedRows = [
+        for (int row = 0; row < painter.board.length; row++)
+          if (painter.board[row].any(
+            (cell) => cell.full != null || cell.bl != null || cell.tr != null,
+          ))
+            row,
+      ];
+      expect(occupiedRows.length, inInclusiveRange(2, 7));
       expect(
-        painter.board.any(
-          (row) =>
-              row.any((c) => c.full != null || c.bl != null || c.tr != null),
+        occupiedRows,
+        List.generate(
+          occupiedRows.length,
+          (index) => painter.board.length - occupiedRows.length + index,
         ),
-        isTrue,
-        reason:
-            "Daily's puzzle board should start roughly half-filled, "
-            'not empty like every other mode.',
+        reason: 'Daily formations should rise continuously from the floor.',
       );
     },
   );
@@ -706,7 +749,7 @@ void main() {
       await tester.tap(find.text('Menu'));
       await tester.pumpAndSettle();
 
-      expect(find.text('What The Tetris'), findsOneWidget);
+      expect(find.text('What The Triangle'), findsOneWidget);
     },
   );
 

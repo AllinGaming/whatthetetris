@@ -146,43 +146,92 @@ class GameBoard {
       if (cells[row].every((cell) => cell.isFullyFilled)) row,
   ];
 
-  /// True once every cell is empty — the win condition for
-  /// [EndCondition.boardCleared] puzzle modes.
+  /// True once every cell is empty.
   bool get isEmpty => cells.every(
     (row) => row.every(
       (cell) => cell.full == null && cell.bl == null && cell.tr == null,
     ),
   );
 
-  /// Deterministically fills roughly the bottom half of the board with a mix
-  /// of full and single-triangle cells, for [GameModeConfig.startsPrefilled]
-  /// puzzle modes — [random] should be seeded identically for every player
-  /// on the same day. Retries a row if it would land 100% full: a
-  /// pre-solved row would just sit there blocking pieces above it, since
-  /// nothing re-checks for full rows outside of an actual piece lock.
+  int get occupiedRowCount => cells
+      .where(
+        (row) => row.any(
+          (cell) => cell.full != null || cell.bl != null || cell.tr != null,
+        ),
+      )
+      .length;
+
+  /// Daily's completion predicate. An empty board also counts so clearing two
+  /// final rows together never punishes the player for exceeding the goal.
+  bool get hasAtMostOneOccupiedRow => occupiedRowCount <= 1;
+
+  /// Deterministically builds a bottom-aligned terrain formation between two
+  /// and seven rows high. A daily seed selects a height, profile, horizontal
+  /// shift, reflection, and exposed triangle edges. Every profile retains an
+  /// open well, so no row starts complete and all gaps remain reachable from
+  /// above instead of becoming sealed cavities.
   void seedPuzzle(
     Random random,
     Color Function(CellKind kind, TriHalf? tri) colorForCell,
   ) {
-    const fillChance = 0.55;
-    final startRow = config.rows ~/ 2;
-    for (int row = startRow; row < config.rows; row++) {
-      List<bool> fills;
-      do {
-        fills = [
-          for (int c = 0; c < config.cols; c++)
-            random.nextDouble() < fillChance,
-        ];
-      } while (fills.every((f) => f));
-      for (int col = 0; col < config.cols; col++) {
-        if (!fills[col]) continue;
+    const profiles = <List<int>>[
+      [0, 1, 2, 3, 4, 5, 6, 4],
+      [6, 4, 2, 1, 0, 2, 4, 5],
+      [3, 6, 4, 1, 0, 2, 5, 3],
+      [0, 4, 1, 6, 2, 5, 3, 4],
+      [5, 2, 6, 3, 0, 4, 1, 5],
+      [2, 5, 1, 4, 6, 3, 0, 4],
+    ];
+    final maximumHeight = min(7, config.rows);
+    if (maximumHeight < 2 || config.cols < 2) return;
+
+    final targetHeight = 2 + random.nextInt(maximumHeight - 1);
+    final profile = profiles[random.nextInt(profiles.length)];
+    final shift = random.nextInt(config.cols);
+    final reflected = random.nextBool();
+    final heights = List.generate(config.cols, (col) {
+      final shifted = (col + shift) % config.cols;
+      final source = reflected ? config.cols - 1 - shifted : shifted;
+      final raw = profile[source % profile.length];
+      if (raw == 0) return 0;
+      return 1 + (raw * (targetHeight - 1) / 6).round();
+    });
+    if (!heights.contains(0)) {
+      final shortest = heights.reduce(min);
+      heights[heights.indexOf(shortest)] = 0;
+    }
+    if (!heights.contains(targetHeight)) {
+      final tallest = heights.reduce(max);
+      heights[heights.indexOf(tallest)] = targetHeight;
+    }
+
+    // Decide the whole shape before invoking colorForCell. The production
+    // callback draws random theme colors, which must not perturb the layout.
+    final ridgeColumns = [
+      for (int col = 0; col < config.cols; col++)
+        if (heights[col] > 0) col,
+    ]..shuffle(random);
+    final triangleColumnCount = min(3, ridgeColumns.length);
+    final triangleColumns = ridgeColumns
+        .take(1 + random.nextInt(triangleColumnCount))
+        .toSet();
+    final triangleHalves = <int, TriHalf>{
+      for (final col in triangleColumns)
+        col: random.nextBool() ? TriHalf.bl : TriHalf.tr,
+    };
+
+    for (int col = 0; col < config.cols; col++) {
+      final height = heights[col];
+      for (int depth = 0; depth < height; depth++) {
+        final row = config.rows - 1 - depth;
         final cell = cells[row][col];
-        if (random.nextBool()) {
-          cell.full = colorForCell(CellKind.full, null);
-        } else if (random.nextBool()) {
+        final triangle = depth == height - 1 ? triangleHalves[col] : null;
+        if (triangle == TriHalf.bl) {
           cell.bl = colorForCell(CellKind.tri, TriHalf.bl);
-        } else {
+        } else if (triangle == TriHalf.tr) {
           cell.tr = colorForCell(CellKind.tri, TriHalf.tr);
+        } else {
+          cell.full = colorForCell(CellKind.full, null);
         }
       }
     }
@@ -205,7 +254,7 @@ class GameBoard {
   }
 
   /// Wipes the top [n] rows in place (no shifting) rather than ending the
-  /// run. Used by Chill/Zen's "soft floor" (docs/GDD.md SS5): a spawn that
+  /// run. Used by Zen's "soft floor" (docs/GDD.md SS5): a spawn that
   /// would otherwise top out instead costs the player some stacked height.
   void clearTopRows(int n) {
     final count = n.clamp(0, config.rows);

@@ -23,7 +23,7 @@ void main() {
           isNewBest: false,
           durationMs: 90000,
           fusions: 3,
-          tetrises: 1,
+          fourLineClears: 1,
           mirrorUses: 6,
           cavityFills: 2,
           newlyUnlocked: const [],
@@ -54,7 +54,7 @@ void main() {
           isNewBest: true,
           durationMs: 1000,
           fusions: 0,
-          tetrises: 0,
+          fourLineClears: 0,
           mirrorUses: 0,
           cavityFills: 0,
           newlyUnlocked: const [],
@@ -85,7 +85,7 @@ void main() {
             isNewBest: false,
             durationMs: 1000,
             fusions: 0,
-            tetrises: 0,
+            fourLineClears: 0,
             mirrorUses: 0,
             cavityFills: 0,
             newlyUnlocked: [achievement],
@@ -119,7 +119,7 @@ void main() {
           isNewBest: false,
           durationMs: 1000,
           fusions: 0,
-          tetrises: 0,
+          fourLineClears: 0,
           mirrorUses: 0,
           cavityFills: 0,
           newlyUnlocked: const [],
@@ -139,36 +139,36 @@ void main() {
     expect(wentToMenu, isTrue);
   });
 
-  testWidgets(
-    'a null onPlayAgain (Daily Challenge -- only one attempt per day) '
-    'hides the Play Again button but keeps Share working',
-    (WidgetTester tester) async {
-      var shared = false;
+  testWidgets('Daily Challenge offers Play Again for repeat attempts', (
+    WidgetTester tester,
+  ) async {
+    var playedAgain = false;
+    var shared = false;
 
-      await tester.pumpWidget(
-        wrap(
-          ResultsScreen(
-            mode: GameMode.daily,
-            score: 100,
-            level: 1,
-            lines: 1,
-            isNewBest: false,
-            durationMs: 1000,
-            fusions: 0,
-            tetrises: 0,
-            mirrorUses: 0,
-            cavityFills: 0,
-            newlyUnlocked: const [],
-            onPlayAgain: null,
-            onShare: () => shared = true,
-            onMenu: () {},
-          ),
+    await tester.pumpWidget(
+      wrap(
+        ResultsScreen(
+          mode: GameMode.daily,
+          score: 100,
+          level: 1,
+          lines: 1,
+          isNewBest: false,
+          durationMs: 1000,
+          fusions: 0,
+          fourLineClears: 0,
+          mirrorUses: 0,
+          cavityFills: 0,
+          newlyUnlocked: const [],
+          onPlayAgain: () => playedAgain = true,
+          onShare: () => shared = true,
+          onMenu: () {},
         ),
-      );
+      ),
+    );
 
-      expect(find.text('Play Again'), findsNothing);
-      await tester.tap(find.text('Share'));
-      expect(shared, isTrue);
-    },
-  );
+    await tester.tap(find.text('Play Again'));
+    await tester.tap(find.text('Share'));
+    expect(playedAgain, isTrue);
+    expect(shared, isTrue);
+  });
 }

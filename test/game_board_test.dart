@@ -187,25 +187,68 @@ void main() {
     expect(board.isEmpty, isTrue);
   });
 
-  test('seedPuzzle only fills the bottom half, leaving the top empty', () {
+  test('one-row Daily goal counts occupied rows and accepts an over-clear', () {
+    final board = GameBoard(const Config(rows: 4, cols: 2));
+    expect(board.occupiedRowCount, 0);
+    expect(board.hasAtMostOneOccupiedRow, isTrue);
+
+    board.cells[3][0].full = Colors.white;
+    expect(board.occupiedRowCount, 1);
+    expect(board.hasAtMostOneOccupiedRow, isTrue);
+
+    board.cells[2][1].tr = Colors.blue;
+    expect(board.occupiedRowCount, 2);
+    expect(board.hasAtMostOneOccupiedRow, isFalse);
+  });
+
+  test('seedPuzzle fills 2 to 7 contiguous rows at the bottom', () {
     final board = GameBoard(const Config(rows: 10, cols: 6));
     board.seedPuzzle(Random(1), (kind, tri) => Colors.grey);
 
-    for (int row = 0; row < 5; row++) {
-      expect(
-        board.cells[row].every(
-          (c) => c.full == null && c.bl == null && c.tr == null,
-        ),
-        isTrue,
-        reason: 'row $row is above the puzzle zone and should stay empty',
-      );
+    final occupiedRows = [
+      for (int row = 0; row < board.config.rows; row++)
+        if (board.cells[row].any(
+          (cell) => cell.full != null || cell.bl != null || cell.tr != null,
+        ))
+          row,
+    ];
+    expect(occupiedRows.length, inInclusiveRange(2, 7));
+    expect(
+      occupiedRows,
+      List.generate(
+        occupiedRows.length,
+        (index) => board.config.rows - occupiedRows.length + index,
+      ),
+      reason: 'The formation must be bottom-aligned without floating rows.',
+    );
+  });
+
+  test('seedPuzzle is deterministic while producing varied formations', () {
+    String signatureFor(int seed) {
+      final board = GameBoard(const Config(rows: 10, cols: 8));
+      board.seedPuzzle(Random(seed), (kind, tri) => Colors.grey);
+      return board.cells
+          .expand((row) => row)
+          .map(
+            (cell) => cell.full != null
+                ? 'F'
+                : cell.bl != null
+                ? 'B'
+                : cell.tr != null
+                ? 'T'
+                : '.',
+          )
+          .join();
     }
-    expect(board.isEmpty, isFalse); // the bottom half actually got filled
+
+    expect(signatureFor(42), signatureFor(42));
+    final signatures = {
+      for (int seed = 0; seed < 24; seed++) signatureFor(seed),
+    };
+    expect(signatures.length, greaterThan(12));
   });
 
   test('seedPuzzle never leaves a row completely full', () {
-    // A high fill chance stresses the retry-until-not-full loop harder than
-    // the puzzle's real ~55% rate would.
     for (final seed in [1, 2, 3, 4, 5]) {
       final board = GameBoard(const Config(rows: 10, cols: 6));
       board.seedPuzzle(Random(seed), (kind, tri) => Colors.grey);

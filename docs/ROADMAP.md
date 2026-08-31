@@ -1,6 +1,6 @@
-# Roadmap — What The Tetris
+# Roadmap — What The Triangle
 
-**Status:** Phases 0–2 implemented and merged. Phases 3–4's code is now also written (client services, Firestore rules, Cloud Functions) but inert — it needs a real Firebase project and RevenueCat account before any of it can actually connect to anything. See per-phase notes below.
+**Status:** Phases 0–2 are implemented. Phase 3 is active in code on web for Analytics, anonymous/linked accounts, lightweight authenticated leaderboards, and multiplayer signaling; Firebase console/rules deployment is still required. Cloud Functions and cloud backup remain disabled. Phase 4 remains inert pending RevenueCat/store setup.
 **Companion docs:** [GDD.md](GDD.md) · [TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md) · [MONETIZATION.md](MONETIZATION.md)
 
 Sequencing principle, per direct instruction: **make the game itself excellent before adding any monetization or backend.** Phases 0–2 are pure game quality with zero new infrastructure risk. Phases 3–5 add the systems requested (analytics, RevenueCat, anonymous accounts + backup) only once the core game earns them. Sizing is relative (S/M/L/XL), not calendar time, since actual pace depends on who's implementing and asset sourcing lead time (audio in particular).
@@ -9,8 +9,8 @@ Sequencing principle, per direct instruction: **make the game itself excellent b
 **Size: M · Depends on: nothing · Unlocks: the single biggest "feels unfinished" gap closing**
 
 - Built `AudioService` (music bus + SFX bus, independent volume sliders, master mute).
-- Wired every action (move, rotate, mirror, drop, lock, clear, tetris, combo, cavity fill, level up, game over, new best, menu nav, pause) to its sound.
-- **Shipped with a caveat, by design:** the current SFX/music set is programmatically synthesized (`tool/generate_audio.py`), not the commissioned pack this phase originally called for — real, distinct audio today, meant to be swapped for licensed/commissioned assets later. Sourcing that pack is still open.
+- Wired every action (move, rotate, mirror, drop, lock, four-line clear, combo, cavity fill, level up, game over, new best, menu nav, pause) to its sound.
+- **Shipped with a caveat, by design:** SFX are programmatically synthesized (`tool/generate_audio.py`), while `tmusic.mp3` and `zen_classic_arcade_music.mp3` are the supplied menu/lobby and gameplay loops. A fully licensed or commissioned production pack remains a release item.
 - **Exit criteria met:** every action has audio feedback; volume/mute/haptics controls exist in Settings; full test suite green.
 
 ## Phase 1 — Mechanical Depth + Replay Foundation ✅ Implemented
@@ -26,7 +26,7 @@ Sequencing principle, per direct instruction: **make the game itself excellent b
 
 - Implemented **Chill mode** (`GDD.md` §5): narrower 8-column board, 5-piece pool, capped speed curve, soft-floor. Shipped first within this phase as the explicitly requested easier mode.
 - Implemented **Sprint, Ultra, Zen** — reused the existing board/piece code, added end-condition/curve wiring and a mode-clock HUD readout.
-- Implemented **Daily Challenge** as a device-local approximation: date-derived seed, one attempt per day, recap dialog on repeat visits. Explicitly *not* the cross-player validated version — that still needs Phase 3's Cloud Function design; see the caveat in `lib/services/daily_challenge_service.dart`.
+- Initially implemented **Daily Challenge** as a device-local, one-attempt approximation. The later player-feedback pass below replaced that limit with unlimited deterministic retries while keeping streaks once-per-day.
 - Regrouped mode-select UI into all four categories (Marathon / Timed / Practice / Daily).
 - Built the Stats & Achievements screen (`GDD.md` §6.1–6.2) — lifetime stats via `StatsService`, achievement unlock state derived live from those stats (no separate "unlocked" set to keep in sync). Shipped with a curated 17-achievement starting set rather than the full 20–30 the design doc describes — a content-authoring pass, not an engineering gap.
 - Built the `ThemePalette`/`ThemeService` cosmetic system (`GDD.md` §6.5) with 3 free themes (Neon, Colorblind-Safe, Sunset), threaded through board rendering, next/hold previews, and the app's own accent color.
@@ -34,7 +34,7 @@ Sequencing principle, per direct instruction: **make the game itself excellent b
 - Expanded the achievement roster from 17 to 22, adding mirror-flip and cavity-fill lifetime counters (`StatsService`), a Daily Challenge completion counter (`DailyChallengeService`), and per-mode achievements (Chill, Ultra).
 - **Exit criteria met:** new modes and systems covered by an expanded `widget_test.dart` plus dedicated unit tests (`theme_service_test.dart`, `stats_and_achievements_test.dart`, `daily_challenge_service_test.dart`); `flutter analyze`/`flutter test`/`dart format`/release web build all green.
 
-**This is the natural point to pause and playtest broadly** — Phases 0–2 should already make the game demonstrably more complete and "finished-feeling" with zero backend risk taken on. Recommend a real playtest round (including non-Tetris-fluent players, to validate Chill mode specifically per `GDD.md` §12) before committing to Phase 3.
+**This is the natural point to pause and playtest broadly** — Phases 0–2 should already make the game demonstrably more complete and "finished-feeling" with zero backend risk taken on. Recommend a real playtest round with players of varied falling-block experience before committing to Phase 3.
 
 ### Post-Phase-2 polish (unplanned, added on request) ✅ Implemented
 
@@ -48,27 +48,27 @@ A further round of feel/retention additions, still entirely local — no new inf
 
 62 tests total, `flutter analyze`/`dart format`/release web build all green.
 
-## Phase 3 — Firebase Foundation ✅ Code written, ⏸️ inert pending real config
+## Phase 3 — Firebase Foundation ✅ Web Analytics + multiplayer configured
 **Size: L · Depends on: Phase 1 (replay format), Phase 2 (stats/achievements data to sync) · Unlocks: cloud backup, analytics visibility, leaderboards, and everything Phase 4 needs**
 
-Serverless throughout — Firebase and RevenueCat are both managed services with nothing for us to host (see `TECHNICAL_ARCHITECTURE.md` §1). All of the following is now written and passing `flutter analyze`/`flutter test`/release web build, but **cannot actually connect to anything** until the account owner creates a real Firebase project and runs `flutterfire configure` (replacing the honestly-labeled placeholder in `lib/firebase_options.dart`). Every service degrades to a safe no-op against that placeholder — see `test/live_services_test.dart`, which locks in exactly that contract.
+Serverless throughout — Firebase and RevenueCat are managed services with nothing for us to host (see `TECHNICAL_ARCHITECTURE.md` §1). The production Firebase web app is present in `firebase_options.dart`; web feature flags enable Analytics, Auth, leaderboards, and multiplayer. Cloud backup remains a safe no-op.
 
 - ~~Stand up `whatthetetris-dev` / `whatthetetris-prod` Firebase projects, Flutter flavors, CI wiring against `dev`.~~ Still needs the account owner's Firebase console action — everything downstream of it is written.
-- **Implemented:** `CloudAuthService` — anonymous auth, Apple/Google linking, restore-on-new-device, account deletion (`lib/services/cloud_auth_service.dart`, `TECHNICAL_ARCHITECTURE.md` §3).
+- **Implemented:** `CloudAuthService` — anonymous auth, optional email/password account creation and login, password reset, logout to a new anonymous identity, and an account-deletion primitive (`lib/services/cloud_auth_service.dart`, `TECHNICAL_ARCHITECTURE.md` §3).
 - **Implemented:** `CloudBackupService` — Firestore sync with highest-value-wins merge (`lib/services/cloud_backup_service.dart`). One deviation from the original sketch: a single `users/{uid}` document with nested `saves`/`stats` maps rather than a `saves/{mode}` subcollection, so the merge is one transaction — see the doc comment for the tradeoff.
-- **Implemented:** `firestore.rules` — owners can read/write their own document except the `entitlements` field (server-write-only via the Cloud Function's Admin SDK access, which bypasses rules); leaderboards/Daily Challenge are world-readable, never client-writable.
+- **Implemented:** `firestore.rules` — owners can read/write their own user document except the reserved `entitlements` field; leaderboard reads require authentication, and clients may create or increase only their own schema-limited Classic/Daily/2 Player entry.
 - **Implemented:** `AnalyticsService` wired to the event taxonomy (session, mode, game-over, scoring events, mirror/cavity-fill usage) — `lib/services/analytics_service.dart`, called from `lib/game/game_screen.dart`. Crashlytics wired to `FlutterError.onError`/`PlatformDispatcher.instance.onError` in `main.dart` (off on web, which has no Crashlytics SDK).
-- **Implemented:** `LeaderboardService` + `LeaderboardScreen` (`lib/services/leaderboard_service.dart`, `lib/ui/leaderboard_screen.dart`) — calls `submitScore` after every scoring run and renders per-mode top-20 lists, reachable from mode-select. Fails to an honest "no scores yet" / "not available yet" state against the placeholder config, same as every other live service.
-- **Implemented, partially:** `functions/src/index.ts`'s `submitScore` rejects implausible replay submissions (non-chronological events, impossibly fast input rates, a scoring run with no recorded inputs) but does **not yet** fully replay-validate a run — that needs the Dart game logic ported to (or run from) the Functions runtime, called out explicitly as a TODO in the function itself. Treat a passing call as "not an obvious cheat," not "cryptographically proven."
-- **Still open:** `PRIVACY.md` rewrite — genuinely not needed yet, because none of this code can make a real network call against the placeholder config; the app's actual behavior today is unchanged. This stays a hard gate for the moment real config replaces the placeholder, not before.
-- **Exit criteria for full activation** (unchanged from the original plan, still not met): a fresh install silently gets a working anonymous account; restoring on a new device via Apple/Google linking works; a tampered client cannot write a leaderboard score directly; privacy policy reviewed and published.
+- **Implemented and web-enabled:** `LeaderboardService` + `LeaderboardScreen` submit/fetch Classic, Daily, and 2 Player shared-team top-10 scores for anonymous or logged-in Firebase players. The client attempts only new local bests; a transaction writes only a higher remote best, and top-10 queries are cached for the app session.
+- **Deliberate tradeoff:** no leaderboard Cloud Function is deployed. Security rules constrain ownership, schema, ranges, timestamps, and increasing scores, but a modified client can still fabricate a score. Trusted replay validation remains future work before competitive stakes are added.
+- **Completed for current scope:** `PRIVACY.md` now discloses web Analytics, anonymous Auth, Firestore signaling, and peer-to-peer gameplay exchange.
+- **Exit criteria for the current friendly-ranking scope:** a fresh install silently gets a working anonymous account; creating an email account preserves that anonymous UID; email/password login restores an existing Firebase leaderboard identity on another device; direct writes obey the deployed rules; privacy policy is reviewed and published. Cheat-resistant competition remains out of scope without trusted validation.
 
-## Phase 4 — RevenueCat + Subscriptions + Cosmetic Store ✅ Code written, ⏸️ inert pending real config
-**Size: L · Depends on: Phase 3 (entitlement mirroring needs the Cloud Function/webhook pattern already in place), Phase 2 (Theme system is the product being sold)**
+## Phase 4 — RevenueCat + Subscriptions + Cosmetic Store ⏸️ Disabled
+**Size: L · Depends on: Phase 3 and a future trusted entitlement-verification design, Phase 2 (Theme system is the product being sold)**
 
 - **Implemented:** `PurchaseService` (`lib/services/purchase_service.dart`) — configures RevenueCat, fetches offerings, purchases a package, checks the `vip_pass` entitlement, restores purchases. Refuses to even attempt `Purchases.configure` against the known-placeholder API key, so it never surfaces a native error dialog for a config that was never going to work.
 - **Implemented:** `PaywallScreen` (`lib/ui/paywall_screen.dart`) — an honest "not available yet" state when unconfigured, a VIP-active state, and an offerings list wired to `purchase`/`restorePurchases`. Reachable from a ⭐ button on the mode-select screen.
-- **Implemented:** `revenueCatWebhook` Cloud Function (`functions/src/index.ts`) mirroring RevenueCat subscription events into `users/{uid}.entitlements`, gated by a shared-secret `Authorization` header check.
+- **Not active:** the previous Functions webhook scaffold was removed so the current game has no Functions runtime or deployment. A future paid launch must add trusted purchase verification without allowing the client to write entitlements.
 - **Still open, and can't be closed from here:** actually configuring RevenueCat products against real App Store Connect/Play Console listings — blocked on the Apple Developer Program/Google Play Console accounts `docs/RELEASE_CHECKLIST.md` already flags as outstanding. Sandbox-testing the full purchase lifecycle is meaningless before that exists.
 - **Exit criteria for full activation** (unchanged, still not met): a full purchase → entitlement-unlock → restore-on-new-device cycle verified in sandbox for both stores; a refunded/cancelled subscription revokes entitlement within a reasonable delay; a deliberate audit confirms no purchase touches speed, scoring, the piece bag, or leaderboard eligibility (`MONETIZATION.md` §1).
 
@@ -77,11 +77,11 @@ Serverless throughout — Firebase and RevenueCat are both managed services with
 Closed the remaining backend loose ends, then a further round of pure game-feel polish — no new infrastructure risk in either:
 
 - **Crashlytics wired** to `FlutterError.onError`/`PlatformDispatcher.instance.onError` in `main.dart` (off on web, which has no Crashlytics SDK; inert everywhere until real config exists).
-- **`LeaderboardService` + `LeaderboardScreen`** — `submitScore` is now actually called from `GameScreen._endGame` for every scoring run, and a real leaderboard screen (mode chips + ranked list) is reachable from mode-select, closing the "written but not wired" gap from the previous round.
-- **Results screen**: a dedicated post-run recap (`lib/ui/widgets/results_screen.dart`) — score, level, lines, duration, and any of Tetrises/Fusion Bonuses/mirror flips/cavity fills that happened, plus a before/after diff against `Achievement.all` surfacing anything that unlocked *because of this specific run*. Replaces "Game Over" as a bare overlay label with an actual moment.
+- **`LeaderboardService` + `LeaderboardScreen`** — a new local best is submitted from `GameScreen._finishGame`, and a real leaderboard screen (mode chips + ranked list) is reachable from mode-select.
+- **Results screen**: a dedicated post-run recap (`lib/ui/widgets/results_screen.dart`) — score, level, lines, duration, and any four-line clears/Fusion Bonuses/mirror flips/cavity fills that happened, plus a before/after diff against `Achievement.all` surfacing anything that unlocked *because of this specific run*. Replaces "Game Over" as a bare overlay label with an actual moment.
 - **Ready countdown**: Sprint and Ultra hold gravity and the clock until a brief "3-2-1-GO" plays out, so the timer never starts before the player is oriented — a real fairness gap for modes where the clock is the score. Deliberately skipped on the very first-ever game, where the tutorial overlay already provides that pause.
 - **Pause Menu** (`lib/ui/widgets/pause_menu.dart`): replaces the bare dimmed "Paused" overlay with a real menu — mode label, live score/level/lines, and Resume/Restart/Settings/Quit. Restart and Quit both confirm via an `AlertDialog` before discarding the run, since both are otherwise-irreversible actions mid-game.
-- **Shake intensity by severity**: `GameAnimations.triggerShake(intensity:)` scales the screen-shake wobble amplitude (clamped 0.4–1.6) so a long hard drop or a Tetris-line clear reads as more forceful than a routine one, instead of every trigger looking identical.
+- **Shake intensity by severity**: `GameAnimations.triggerShake(intensity:)` scales the screen-shake wobble amplitude (clamped 0.4–1.6) so a long hard drop or a four-line clear reads as more forceful than a routine one, instead of every trigger looking identical.
 - **Hard-drop impact ring** (`GameAnimations.triggerImpactRing`, drawn in `board_painter.dart`): an expanding, fading ring at the landing cell on any hard drop of 3+ rows, layered with the existing particle burst for a clearer "impact" read.
 
 ### Gameplay/UI/vibes balanced pass ✅ Implemented
@@ -108,7 +108,7 @@ A second survey (Settings screen, mobile stats bar, haptics coverage, new-best t
 
 A mechanics survey (`countFusions`/`_mirrorActive`/`fillLowestCavity`/combo/back-to-back logic in `game_screen.dart` and `game_board.dart`) found the old "How to Play" overlay was 4 pages of icon+text with no visual demonstration of anything, shown exactly once ever with no way to reopen it — a real gap for a game whose star mechanic (fusion) is genuinely hard to picture from text alone:
 
-- **Expanded to 6 accurate pages** (`lib/ui/widgets/tutorial_overlay.dart`): Move & Rotate, Mirror Flip, Fusion Bonus, Back-to-Back & Combo (previously not mentioned at all), Hold & Cavity Fill, and Picking a Mode (a Chill/Zen callout for uncertain new players, framed per `docs/GDD.md`'s "play at your own pace," not as a difficulty apology). Copy was written directly from the mechanics' actual code — e.g. fusion is color-blind (any two opposite halves fuse, not matching colors), Cavity Fill self-completes a stray half with its own color rather than borrowing one, and a "hard clear" for Back-to-Back is a Tetris *or* a 2+-fusion lock.
+- **Expanded to 6 accurate pages** (`lib/ui/widgets/tutorial_overlay.dart`): Move & Rotate, Mirror Flip, Fusion Bonus, Back-to-Back & Combo (previously not mentioned at all), Hold & Cavity Fill, and Picking a Mode (a Chill/Zen callout for uncertain new players, framed per `docs/GDD.md`'s "play at your own pace," not as a difficulty apology). Copy was written directly from the mechanics' actual code — e.g. fusion is color-blind (any two opposite halves fuse, not matching colors), Cavity Fill self-completes a stray half with its own color rather than borrowing one, and a "hard clear" is a four-line clear or a 2+-fusion lock.
 - **Real visual demonstrations, not icons**: the Fusion page embeds `FusionHero` (the start-screen animation, reused as-is); the Mirror Flip page gets a new `lib/ui/widgets/mirror_flip_demo.dart` — a looping 3D card-flip showing a piece's triangle-half assignment swapping in place; the Cavity Fill page gets a new static `lib/ui/widgets/cavity_fill_diagram.dart` before/after pair. Both new widgets respect the OS-level "reduce motion" flag the same way `FusionHero` does.
 - **No longer locked to first launch**: added a permanent "How to Play" entry point on the start screen's header icon row and a "How to Play" row in Settings' new Help card — either one reopens the exact same overlay and marks it seen, so a player who skipped it (or wants a refresher) isn't locked out for good.
 
@@ -121,7 +121,7 @@ A follow-up survey targeted three specific gaps (the mobile HUD was still the le
 - **Fixed a real bug**: `celebration` and `levelUp` (the new-best flash and level-up flash) were never stopped or zeroed at run-start, unlike `danger`/`comboHeat` — a fast "Play Again" right after a new-best game-over could carry a still-animating celebration flash into the first frames of the new run. Consolidated into `GameAnimations.resetForNewRun()`, which stops and zeroes every transient controller (including particles) in one place, called from `_startGame()`.
 - **Mobile HUD now carries danger/combo feedback**: `MobileStatsBar`'s top border now pulses red under danger and glows accent-to-red with combo heat — the same signals the board already shows, previously invisible on the compact mobile layout since neither `MobileStatsBar` nor `GameSidePanel` had ever been given access to `GameAnimations`.
 - **Achievement unlocks get a distinct sting**: a new `Sfx.achievementUnlock` cue (`tool/generate_audio.py`) plays once, timed to the Results screen's reveal, whenever a run unlocks at least one achievement — previously a unlock was visually shown on the Results screen but had no audio cue of its own at all.
-- **Arcade gets its own music** (`MusicTrack.arcade`, `music_arcade_loop.wav`): a punchier lead-over-bass loop distinct from the shared "marathon" bed, matching Arcade's manual speed-boost adrenaline. Chill/Zen keep the calm ambient loop; Classic/Sprint/Ultra/Daily keep marathon.
+- **Historical audio pass:** earlier builds assigned different synthesized beds by mode. The current player-feedback pass intentionally replaces them with one consistent `zen_classic_arcade_music.mp3` gameplay loop.
 
 108 tests total, `flutter analyze`/`dart format`/release web build all green.
 
@@ -131,7 +131,7 @@ After several rounds of rapid feature work, three parallel adversarial code revi
 
 - **Fixed a critical race**: the game's own advertised instant-restart shortcuts (Space, the mobile Play button) could fire `_startGame()` while `_finishGame()`'s persistence/analytics work for the *previous* run was still in flight — resetting `_score`/`_lines`/`_lastReplay` out from under a still-running score/leaderboard submission, mislabeling or silently dropping it, and in the worst case leaving a stale Results dialog modal over an already-running second game. Fixed with a `_finishingGame` guard flag, cleared before the Results dialog opens (not around it) so a legitimate Play Again tapped from inside that dialog is never mistaken for the race.
 - **Fixed a use-after-dispose risk**: `_finishGame` touched `setState`/`GameAnimations` (the new-best toast, celebration trigger, particle burst) *before* its only `mounted` check, reachable by backing out of the app right after a run ends. Added the missing check.
-- **Fixed a real data-corruption bug**: `DailyChallengeService.recordResult` wasn't idempotent — a second same-day call (a caller bug, a retry, two sessions racing) read its own just-written date as "not yesterday" and collapsed a real streak back down to 1 while double-counting `completedCount`. Now a no-op if today's result is already recorded.
+- **Fixed a real data-corruption bug**: `DailyChallengeService.recordResult` wasn't idempotent — a second same-day call could collapse a real streak back down to 1 while double-counting `completedCount`. Same-day retries now update only the best score/clear state and leave daily counters intact.
 - **Fixed a tutorial navigation bug**: a fast double-tap on Skip/"Let's go" could pop the tutorial dialog *and* the screen underneath it (Start screen, Settings, or a brand-new first-launch `GameScreen`), since Navigator's pop transition is synchronous and nothing debounced the second call. Fixed with a `_closing` guard in `TutorialOverlay`.
 - **Fixed a real accessibility gap**: the in-app Settings > Accessibility > "Reduce motion" toggle never reached `FusionHero`/`MirrorFlipDemo` — they only checked the OS-level `MediaQuery.disableAnimations` flag, so turning the setting on still left the looping demos animating. Both widgets (and `TutorialOverlay`, which embeds them) now take an explicit `reduceMotion` param wired from `SettingsService` at all three of the tutorial's entry points.
 - **Fixed a layout risk**: `TutorialOverlay`'s fixed-height content had no scroll fallback, unlike `ResultsScreen` — a short/landscape viewport (an acknowledged real scenario on mobile web, which can't be orientation-locked) or a high UI-scale setting could overflow it with no way to reach Skip/Next. Wrapped in a `SingleChildScrollView` with a height cap, matching `ResultsScreen`'s pattern.
@@ -154,14 +154,35 @@ Two previously-flagged gaps closed in one round: several rounds of animation wor
 
 ### Daily Challenge redesign ✅ Implemented
 
-The original Daily Challenge (`ROADMAP.md` Phase 2) was a normal marathon run on a seeded board — same mechanic as Classic, just with a shared daily seed and a streak counter. That undersold the "daily puzzle" framing `GDD.md` §5/§6.3 actually wanted: a puzzle players solve once a day, not another endurance run. Redesigned it into a proper board-clearing puzzle:
+The original Daily Challenge (`ROADMAP.md` Phase 2) was a normal marathon run on a seeded board — same mechanic as Classic, just with a shared daily seed and a streak counter. That undersold the "daily puzzle" framing `GDD.md` §5/§6.3 actually wanted: a puzzle players solve once a day, not another endurance run. Redesigned it into a proper stack-reduction puzzle:
 
-- **`GameModeConfig.startsPrefilled`** (`lib/models/game_mode.dart`): Daily Challenge now spawns with the board already roughly half-filled via `GameBoard.seedPuzzle` — a deterministic mix of full/single-triangle cells seeded from the same day-derived seed as the piece bag (its own `Random` instance, so puzzle-layout draws never perturb piece-bag draws or vice versa), retrying any row that would generate 100% full (a pre-solved row would just sit there blocking play).
-- **New `EndCondition.boardCleared`**: the run now ends — as a win — the instant `_board.isEmpty` after a clear, instead of only ending by topping out. Wired in `game_screen.dart`, alongside the existing Ready-countdown treatment (now also triggered for `startsPrefilled`, giving the player a beat to survey the puzzle before gravity starts).
+- **`GameModeConfig.startsPrefilled`** (`lib/models/game_mode.dart`): Daily Challenge spawns with one of several deterministic, bottom-aligned terrain formations 2–7 rows high. The day-derived seed selects its height, profile, reflection, position, and exposed triangle edges independently from the seeded piece bag.
+- **`EndCondition.boardReducedToOneRow`**: the run ends as a win once the locked board occupies no more than one row. An empty-board over-clear also wins, so clearing the final two rows together is never punished. The check is shared by normal locks and cavity fills.
 - **`DailyChallengeService.todaysCleared`**: tracks whether today's attempt actually cleared the board versus topping out first, stored alongside the existing streak/score/completed-count fields, surfaced on the mode card and in the recap dialog.
-- Every other Daily Challenge mechanic (one attempt per calendar day, consecutive-day streak, device-local seed derivation, the caveat about needing a real server for cross-player validation) is unchanged from Phase 2 — this was a win-condition/board-state change, not a rebuild of the daily-cadence machinery.
+- The consecutive-day streak, device-local seed derivation, and caveat about needing a real server for cross-player validation remained unchanged in this first redesign.
 
 138 tests total, `flutter analyze`/`dart format`/release web build all green.
+
+### Player-feedback focus pass ✅ Implemented
+
+- Renamed the successful Chill experience to player-facing **Classic** while preserving its internal storage key and saved scores. The old Classic and all timed/legacy modes remain implemented but are hidden from mode select.
+- Removed Classic's soft floor after follow-up feedback: the relaxed pace and five-shape pool remain, but reaching the top now ends the run normally.
+- Daily Challenge now supports unlimited retries of the same deterministic board and piece order. It stores the best score and clear state for the day while advancing streak/completion only once.
+- Daily uses Classic's five-shape pool, capped speed curve, two starting cavity fills, a dedicated calendar card icon, and a deterministic 2–7-row terrain formation. Reducing the locked stack to at most one occupied row is the visible roster's only win condition.
+- VIP remains hidden. Authenticated Classic/Daily/2 Player leaderboards and Login are available from the start-screen toolbar.
+
+### Shared-board 2 Player foundation ✅ Implemented (configuration required)
+
+- Added a visible 2 Player mode with a shared six-character room-code lobby: the host is permanently red/bottom-left and the guest permanently blue/top-right.
+- Added a host-authoritative 8×20 cooperative engine with two simultaneous falling pieces, Classic's five-shape pool, normal shared top-out, synchronized restart, and no Mirror action in the input protocol or controls.
+- Added separate cavity-fill inventories: red and blue each start with one, and every cleared line awards one recharge only to the player whose action completed it. Compact snapshots keep both counts synchronized.
+- Added Classic-style landing ghosts to 2 Player, calculated from the latest authoritative snapshot and rendered only for the local player's falling piece.
+- Added a persisted one-tap master mute to every solo and 2 Player gameplay HUD; it controls both the shared music bed and sound effects and stays synchronized with Settings.
+- Menus and room waiting loop `tmusic.mp3`; every gameplay mode loops the supplied `zen_classic_arcade_music.mp3`; anonymous lobby players get a non-blocking Login option.
+- Each peer records the final shared score as their local 2 Player personal best. Only a new local best attempts the player's own minimal Firestore leaderboard transaction; room codes and partner IDs are not part of leaderboard entries.
+- Firestore is signaling only. Gathered ICE candidates are bundled into one offer and answer, keeping a successful lobby to four room-document writes; listeners stop after connection. Ordered gameplay inputs and compact board snapshots move peer-to-peer over WebRTC.
+- Added participant-scoped Firestore rules, compact versioned snapshots, room-code validation, teardown safety, and focused engine/lobby tests.
+- The production web Firebase app is configured in code for Analytics, anonymous plus email/password accounts, authenticated leaderboards, and anonymous room signaling; cloud backup remains disabled. Console activation requires Anonymous and Email/Password Auth, deployed Firestore rules, the GitHub Pages authorized domain, and TTL cleanup. Physical two-device testing and a TURN service remain multiplayer release gates.
 
 ## Phase 5 — Store Publishing Readiness
 **Size: M · Depends on: everything above being feature-complete and stable · Existing tracking: `docs/RELEASE_CHECKLIST.md`**
@@ -180,8 +201,8 @@ This phase is mostly already tracked in `docs/RELEASE_CHECKLIST.md` and doesn't 
 | 0 | Audio | ✅ Implemented | — |
 | 1 | Fusion/B2B scoring + replay format | ✅ Implemented | — |
 | 2 | Modes (incl. Chill), meta systems, themes, accessibility | ✅ Implemented | Phase 0 (music cues) |
-| 3 | Firebase: accounts, backup, analytics, leaderboards | ✅ Code written · ⏸️ inert without a real Firebase project | Phases 1, 2; a Firebase project the account owner creates |
+| 3 | Firebase: accounts, backup, analytics, leaderboards | Web Analytics, accounts, lightweight leaderboards, and multiplayer configured; backup off | Phases 1, 2; Firebase console activation |
 | 4 | RevenueCat subscriptions + cosmetic store | ✅ Code written · ⏸️ inert without a real RevenueCat account + store listings | Phase 3; a RevenueCat account the account owner creates |
 | 5 | Store submission | Not started | Phases 0–4 |
 
-**Recommendation:** playtest the Phase 0–2 game (including non-Tetris-fluent players, to validate Chill mode per `GDD.md` §12) — that part is real and running today. Phases 3–4 are written and tested against their own "degrades gracefully" contract (`test/live_services_test.dart`), but every line of it is inert until a real Firebase project and RevenueCat account exist; there's no benefit to activating them before the game itself is proven fun, and no cost to having the code sit ready in the meantime. Known open items, for whenever they're picked back up: a commissioned audio pack to replace the synthesized placeholder set, growing the achievement roster further toward the full 20–30, the `submitScore` full-replay-validation TODO, `firebase_app_check`/`firebase_remote_config` (deliberately not added yet — genuinely optional until there's real traffic), and — before any of Phase 3/4 goes live — the actual Firebase/RevenueCat/developer accounts only the project owner can create.
+**Recommendation:** playtest the visible Classic, repeatable Daily, and shared-board 2 Player modes broadly. Known open items include a commissioned audio pack, a larger achievement roster, trusted leaderboard validation if competitive stakes are ever added, `firebase_app_check` before meaningful abuse risk, a production TURN service for reliable co-op connectivity, legal review, and the external store/RevenueCat configuration only the project owner can complete.

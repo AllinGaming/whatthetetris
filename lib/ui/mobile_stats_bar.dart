@@ -4,7 +4,9 @@ import '../game/game_animations.dart';
 import '../models/board.dart';
 import '../models/piece.dart';
 import '../models/theme_palette.dart';
+import '../services/audio_service.dart';
 import 'widgets/next_piece_preview.dart';
+import 'widgets/quick_mute_button.dart';
 
 /// Compact score/lines/level + next-piece strip for the portrait mobile
 /// layout — the side panel's long mode description doesn't fit here, so
@@ -26,6 +28,7 @@ class MobileStatsBar extends StatelessWidget {
     required this.onPauseOrPlay,
     required this.onMenu,
     required this.onShare,
+    this.audio,
   });
 
   final GameState state;
@@ -49,6 +52,7 @@ class MobileStatsBar extends StatelessWidget {
   final VoidCallback onPauseOrPlay;
   final VoidCallback onMenu;
   final VoidCallback onShare;
+  final AudioService? audio;
 
   /// Danger (crisp red, board-matching) takes priority over combo heat
   /// (accent-to-red glow) since both would otherwise fight for the same
@@ -89,6 +93,7 @@ class MobileStatsBar extends StatelessWidget {
               icon: const Icon(Icons.menu, color: Colors.white70),
               tooltip: 'Menu',
             ),
+            if (audio != null) QuickMuteButton(audio: audio!, compact: true),
             _MiniStat(label: 'Score', value: score),
             _MiniStat(label: 'Lines', value: lines),
             _MiniStat(label: 'Lvl', value: level),

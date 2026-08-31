@@ -4,6 +4,7 @@
 
 - [ ] Confirm ownership of `com.allingaming.whatthetetris` before registering the Android and Apple applications.
 - [ ] Complete a product-name and trademark review before commercial distribution.
+- [ ] Plan and execute a coordinated migration of the legacy GitHub/Firebase/package/bundle identifiers if the old slug must also disappear from technical URLs and store identifiers.
 - [ ] Select the Apple Developer team and verify signing capabilities in Xcode.
 - [ ] After upgrading to Flutter 3.47 or later, migrate Android to built-in Kotlin and remove the temporary legacy-Kotlin flags.
 - [ ] Create an Android upload key, copy `android/key.properties.example` to the ignored `android/key.properties`, and store the key and passwords in an approved secret manager.
@@ -28,3 +29,11 @@
 - [ ] Define a versioned replay format containing the seed and accepted player commands.
 - [ ] Validate leaderboard submissions on a trusted service; never trust a client-provided score by itself.
 - [ ] Add abuse controls, retention rules, account deletion, incident response, and an updated privacy policy.
+
+## Before activating online co-op
+
+- [ ] Enable anonymous Auth, authorize `allingaming.github.io`, deploy `firestore.rules`, and run participant/attacker Firestore Emulator rule tests.
+- [ ] Configure Firestore TTL on `multiplayerRooms.expiresAt` and confirm abandoned room documents are deleted.
+- [ ] Provision a production TURN service with short-lived credentials; verify both relayed and direct connections rather than relying on public STUN alone.
+- [ ] Test two physical devices across same Wi-Fi, different Wi-Fi networks, and Wi-Fi-to-cellular, including backgrounding, disconnects, simultaneous inputs, top-out, restart, and leaving the lobby.
+- [ ] Update and review the privacy policy, store disclosures, data retention, and account/data-deletion behavior before enabling Firebase in a distributed build.

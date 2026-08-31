@@ -1,0 +1,501 @@
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+
+import '../models/active_piece.dart';
+import '../models/board.dart';
+import '../models/piece.dart';
+import '../models/pieces.dart';
+import 'game_board.dart';
+import 'piece_bag.dart';
+
+enum CoopPlayer {
+  red,
+  blue;
+
+  TriHalf get triangle => this == CoopPlayer.red ? TriHalf.bl : TriHalf.tr;
+  Color get color => this == CoopPlayer.red ? duoBlColor : duoTrColor;
+  bool get mirrored => this == CoopPlayer.blue;
+}
+
+/// Deliberately has no mirror action: each peer permanently owns one
+/// triangle orientation so cooperation, not self-mirroring, completes cells.
+/// Cavity fills use separate per-player charge inventories. Mirror stays out
+/// of the protocol because each peer permanently owns one triangle direction.
+enum CoopAction {
+  left,
+  right,
+  softDrop,
+  rotateLeft,
+  rotateRight,
+  hardDrop,
+  fillCavity,
+}
+
+class CoopActivePieceState {
+  const CoopActivePieceState({
+    required this.name,
+    required this.rotation,
+    required this.row,
+    required this.col,
+  });
+
+  factory CoopActivePieceState.fromPiece(ActivePiece piece) =>
+      CoopActivePieceState(
+        name: piece.type.name,
+        rotation: piece.rotation,
+        row: piece.row,
+        col: piece.col,
+      );
+
+  factory CoopActivePieceState.fromJson(Map<String, dynamic> json) =>
+      CoopActivePieceState(
+        name: json['name'] as String,
+        rotation: (json['rotation'] as num).toInt(),
+        row: (json['row'] as num).toInt(),
+        col: (json['col'] as num).toInt(),
+      );
+
+  final String name;
+  final int rotation;
+  final int row;
+  final int col;
+
+  ActivePiece toPiece(CoopPlayer player) => ActivePiece(
+    type: Pieces.all.firstWhere((piece) => piece.name == name),
+    rotation: rotation,
+    row: row,
+    col: col,
+    mirrored: player.mirrored,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'rotation': rotation,
+    'row': row,
+    'col': col,
+  };
+}
+
+/// Compact host-authoritative state sent over the WebRTC data channel.
+/// Locked cells use a bit mask: 1 = red/bottom-left, 2 = blue/top-right,
+/// 4 = a full cell. A complete red+blue fusion is therefore 3.
+class CoopGameSnapshot {
+  const CoopGameSnapshot({
+    required this.revision,
+    required this.rows,
+    required this.cols,
+    required this.cells,
+    required this.redPiece,
+    required this.bluePiece,
+    required this.score,
+    required this.lines,
+    required this.redCavityCharges,
+    required this.blueCavityCharges,
+    required this.gameOver,
+  });
+
+  factory CoopGameSnapshot.fromJson(Map<String, dynamic> json) {
+    final rows = (json['rows'] as num).toInt();
+    final cols = (json['cols'] as num).toInt();
+    final cells = (json['cells'] as List<dynamic>)
+        .map((value) => (value as num).toInt())
+        .toList(growable: false);
+    if (cells.length != rows * cols) {
+      throw const FormatException('Invalid cooperative board size');
+    }
+    CoopActivePieceState? parsePiece(Object? value) => value == null
+        ? null
+        : CoopActivePieceState.fromJson(
+            Map<String, dynamic>.from(value as Map<dynamic, dynamic>),
+          );
+
+    final legacyCavityCharges = (json['cavityCharges'] as num?)?.toInt();
+    return CoopGameSnapshot(
+      revision: (json['revision'] as num).toInt(),
+      rows: rows,
+      cols: cols,
+      cells: cells,
+      redPiece: parsePiece(json['redPiece']),
+      bluePiece: parsePiece(json['bluePiece']),
+      score: (json['score'] as num).toInt(),
+      lines: (json['lines'] as num).toInt(),
+      redCavityCharges:
+          (json['redCavityCharges'] as num?)?.toInt() ??
+          legacyCavityCharges ??
+          0,
+      blueCavityCharges: (json['blueCavityCharges'] as num?)?.toInt() ?? 0,
+      gameOver: json['gameOver'] as bool,
+    );
+  }
+
+  final int revision;
+  final int rows;
+  final int cols;
+  final List<int> cells;
+  final CoopActivePieceState? redPiece;
+  final CoopActivePieceState? bluePiece;
+  final int score;
+  final int lines;
+  final int redCavityCharges;
+  final int blueCavityCharges;
+  final bool gameOver;
+
+  Config get config => Config(rows: rows, cols: cols);
+
+  ActivePiece? activeFor(CoopPlayer player) {
+    final state = player == CoopPlayer.red ? redPiece : bluePiece;
+    return state?.toPiece(player);
+  }
+
+  int cavityChargesFor(CoopPlayer player) =>
+      player == CoopPlayer.red ? redCavityCharges : blueCavityCharges;
+
+  /// Calculates the landing preview from this peer's latest authoritative
+  /// snapshot. The screen renders only its local player's result.
+  ActivePiece? ghostFor(CoopPlayer player) {
+    final active = activeFor(player);
+    if (active == null || gameOver) return null;
+    var ghost = active;
+    final gameBoard = GameBoard(config)..cells = buildBoard();
+    final other = activeFor(
+      player == CoopPlayer.red ? CoopPlayer.blue : CoopPlayer.red,
+    );
+    while (true) {
+      final next = ghost.copyWith(row: ghost.row + 1);
+      if (!gameBoard.canPlace(next) ||
+          (other != null && _piecesConflict(next, other))) {
+        return ghost;
+      }
+      ghost = next;
+    }
+  }
+
+  List<List<CellOccupancy>> buildBoard() => List.generate(rows, (row) {
+    return List.generate(cols, (col) {
+      final mask = cells[row * cols + col];
+      final cell = CellOccupancy();
+      if (mask & 4 != 0) {
+        cell.full = duoFullColor;
+      } else {
+        if (mask & 1 != 0) cell.bl = duoBlColor;
+        if (mask & 2 != 0) cell.tr = duoTrColor;
+      }
+      return cell;
+    });
+  });
+
+  Map<String, dynamic> toJson() => {
+    'version': 3,
+    'revision': revision,
+    'rows': rows,
+    'cols': cols,
+    'cells': cells,
+    'redPiece': redPiece?.toJson(),
+    'bluePiece': bluePiece?.toJson(),
+    'score': score,
+    'lines': lines,
+    'redCavityCharges': redCavityCharges,
+    'blueCavityCharges': blueCavityCharges,
+    'gameOver': gameOver,
+  };
+}
+
+/// Runs only on the room host. The blue peer sends inputs while the host
+/// applies both players' actions and broadcasts snapshots, avoiding two
+/// devices independently resolving simultaneous locks or line clears.
+class CoopGameEngine {
+  CoopGameEngine({required int seed})
+    : _redBag = PieceBag(random: Random(seed ^ 0x52ED), pieces: _coopPieces),
+      _blueBag = PieceBag(random: Random(seed ^ 0xB1E0), pieces: _coopPieces),
+      board = GameBoard(config) {
+    _spawn(CoopPlayer.red);
+    _spawn(CoopPlayer.blue);
+  }
+
+  static const config = Config(rows: 20, cols: 8);
+  static final _coopPieces = Pieces.byNames(const [
+    'I4',
+    'O4',
+    'T4',
+    'L4',
+    'J4',
+  ]);
+
+  final PieceBag _redBag;
+  final PieceBag _blueBag;
+  final GameBoard board;
+  ActivePiece? _redPiece;
+  ActivePiece? _bluePiece;
+  int score = 0;
+  int lines = 0;
+  int _redCavityCharges = 1;
+  int _blueCavityCharges = 1;
+  int revision = 0;
+  bool gameOver = false;
+
+  ActivePiece? activeFor(CoopPlayer player) =>
+      player == CoopPlayer.red ? _redPiece : _bluePiece;
+
+  int cavityChargesFor(CoopPlayer player) =>
+      player == CoopPlayer.red ? _redCavityCharges : _blueCavityCharges;
+
+  void _setCavityCharges(CoopPlayer player, int value) {
+    if (player == CoopPlayer.red) {
+      _redCavityCharges = value;
+    } else {
+      _blueCavityCharges = value;
+    }
+  }
+
+  void _addCavityCharges(CoopPlayer player, int value) {
+    _setCavityCharges(player, cavityChargesFor(player) + value);
+  }
+
+  void _setActive(CoopPlayer player, ActivePiece? piece) {
+    if (player == CoopPlayer.red) {
+      _redPiece = piece;
+    } else {
+      _bluePiece = piece;
+    }
+  }
+
+  PieceBag _bagFor(CoopPlayer player) =>
+      player == CoopPlayer.red ? _redBag : _blueBag;
+
+  CoopPlayer _other(CoopPlayer player) =>
+      player == CoopPlayer.red ? CoopPlayer.blue : CoopPlayer.red;
+
+  bool applyAction(CoopPlayer player, CoopAction action) {
+    if (gameOver) return false;
+    if (action == CoopAction.fillCavity) return _fillCavity(player);
+    if (activeFor(player) == null) return false;
+    return switch (action) {
+      CoopAction.left => _move(player, dx: -1),
+      CoopAction.right => _move(player, dx: 1),
+      CoopAction.softDrop => _softDrop(player),
+      CoopAction.rotateLeft => _rotate(player, -1),
+      CoopAction.rotateRight => _rotate(player, 1),
+      CoopAction.hardDrop => _hardDrop(player),
+      CoopAction.fillCavity => false,
+    };
+  }
+
+  bool _fillCavity(CoopPlayer player) {
+    if (cavityChargesFor(player) <= 0) return false;
+    final filled = board.fillLowestCavity(
+      colorForFill: (fillTri, _) =>
+          fillTri == TriHalf.bl ? duoBlColor : duoTrColor,
+    );
+    if (filled == null) return false;
+
+    _addCavityCharges(player, -1);
+    final fullRows = board.detectFullRows();
+    if (fullRows.isNotEmpty) {
+      board.collapseRows(fullRows);
+      lines += fullRows.length;
+      // Exactly one recharge per line, awarded only to the player whose
+      // action completed it rather than duplicated into both inventories.
+      _addCavityCharges(player, fullRows.length);
+      score += _lineClearScore(fullRows.length);
+      _shiftBothAfterClear(fullRows);
+    }
+    revision++;
+    return true;
+  }
+
+  bool tick() {
+    if (gameOver) return false;
+    var changed = _step(CoopPlayer.red);
+    if (!gameOver) changed = _step(CoopPlayer.blue) || changed;
+    return changed;
+  }
+
+  bool _step(CoopPlayer player) {
+    final piece = activeFor(player);
+    if (piece == null) return false;
+    final next = piece.copyWith(row: piece.row + 1);
+    if (_canPlace(player, next)) {
+      _setActive(player, next);
+      revision++;
+      return true;
+    }
+    _lock(player);
+    return true;
+  }
+
+  bool _move(CoopPlayer player, {int dx = 0, int dy = 0}) {
+    final piece = activeFor(player)!;
+    final next = piece.copyWith(row: piece.row + dy, col: piece.col + dx);
+    if (!_canPlace(player, next)) return false;
+    _setActive(player, next);
+    revision++;
+    return true;
+  }
+
+  bool _softDrop(CoopPlayer player) {
+    if (_move(player, dy: 1)) {
+      score += 1;
+      return true;
+    }
+    _lock(player);
+    return true;
+  }
+
+  bool _rotate(CoopPlayer player, int delta) {
+    final piece = activeFor(player)!;
+    final count = piece.type.rotations.length;
+    final raw = (piece.rotation + delta) % count;
+    final rotation = raw < 0 ? raw + count : raw;
+    for (final kick in const [0, -1, 1, -2, 2]) {
+      final next = piece.copyWith(rotation: rotation, col: piece.col + kick);
+      if (_canPlace(player, next)) {
+        _setActive(player, next);
+        revision++;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _hardDrop(CoopPlayer player) {
+    var piece = activeFor(player)!;
+    var distance = 0;
+    while (true) {
+      final next = piece.copyWith(row: piece.row + 1);
+      if (!_canPlace(player, next)) break;
+      piece = next;
+      distance++;
+    }
+    _setActive(player, piece);
+    score += distance * 2;
+    _lock(player);
+    return true;
+  }
+
+  void _lock(CoopPlayer player) {
+    final piece = activeFor(player);
+    if (piece == null || gameOver) return;
+    final fusions = board.countFusions(piece);
+    board.lock(piece, colorForCell: (_) => player.color);
+    _setActive(player, null);
+    score += 10 + fusions * 25;
+
+    final fullRows = board.detectFullRows();
+    if (fullRows.isNotEmpty) {
+      board.collapseRows(fullRows);
+      lines += fullRows.length;
+      _addCavityCharges(player, fullRows.length);
+      score += _lineClearScore(fullRows.length);
+      _shiftOtherAfterClear(_other(player), fullRows);
+    }
+    revision++;
+    if (!gameOver) _spawn(player);
+  }
+
+  int _lineClearScore(int count) => switch (count) {
+    1 => 100,
+    2 => 300,
+    3 => 500,
+    _ => 800,
+  };
+
+  void _shiftBothAfterClear(List<int> clearedRows) {
+    final red = _redPiece;
+    final blue = _bluePiece;
+    _redPiece = null;
+    _bluePiece = null;
+    if (red != null) {
+      _redPiece = red;
+      _shiftOtherAfterClear(CoopPlayer.red, clearedRows);
+    }
+    if (blue != null && !gameOver) {
+      _bluePiece = blue;
+      _shiftOtherAfterClear(CoopPlayer.blue, clearedRows);
+    }
+  }
+
+  void _shiftOtherAfterClear(CoopPlayer player, List<int> clearedRows) {
+    var piece = activeFor(player);
+    if (piece == null) return;
+    final maxRow = piece.cellsOnBoard().map((cell) => cell.row).reduce(max);
+    final shift = clearedRows.where((row) => row > maxRow).length;
+    if (shift > 0) piece = piece.copyWith(row: piece.row + shift);
+    if (_canPlace(player, piece)) {
+      _setActive(player, piece);
+      return;
+    }
+    for (int lift = 1; lift <= clearedRows.length + 2; lift++) {
+      final lifted = piece.copyWith(row: piece.row - lift);
+      if (_canPlace(player, lifted)) {
+        _setActive(player, lifted);
+        return;
+      }
+    }
+    gameOver = true;
+  }
+
+  void _spawn(CoopPlayer player) {
+    final type = _bagFor(player).take();
+    final width = type.rotations.first.map((cell) => cell.col).reduce(max) + 1;
+    final piece = ActivePiece(
+      type: type,
+      row: 0,
+      col: (config.cols - width) ~/ 2,
+      mirrored: player.mirrored,
+    );
+    _setActive(player, piece);
+    if (!_canPlace(player, piece)) gameOver = true;
+    revision++;
+  }
+
+  bool _canPlace(CoopPlayer player, ActivePiece piece) {
+    if (!board.canPlace(piece)) return false;
+    final other = activeFor(_other(player));
+    if (other == null) return true;
+    return !_piecesConflict(piece, other);
+  }
+
+  CoopGameSnapshot snapshot() {
+    final cells = <int>[];
+    for (final row in board.cells) {
+      for (final cell in row) {
+        var mask = 0;
+        if (cell.bl != null) mask |= 1;
+        if (cell.tr != null) mask |= 2;
+        if (cell.full != null) mask |= 4;
+        cells.add(mask);
+      }
+    }
+    return CoopGameSnapshot(
+      revision: revision,
+      rows: config.rows,
+      cols: config.cols,
+      cells: cells,
+      redPiece: _redPiece == null
+          ? null
+          : CoopActivePieceState.fromPiece(_redPiece!),
+      bluePiece: _bluePiece == null
+          ? null
+          : CoopActivePieceState.fromPiece(_bluePiece!),
+      score: score,
+      lines: lines,
+      redCavityCharges: _redCavityCharges,
+      blueCavityCharges: _blueCavityCharges,
+      gameOver: gameOver,
+    );
+  }
+}
+
+bool _piecesConflict(ActivePiece first, ActivePiece second) {
+  for (final cell in first.cellsOnBoard()) {
+    for (final otherCell in second.cellsOnBoard()) {
+      if (cell.row != otherCell.row || cell.col != otherCell.col) continue;
+      if (cell.kind == CellKind.full || otherCell.kind == CellKind.full) {
+        return true;
+      }
+      if (cell.tri == otherCell.tri) return true;
+    }
+  }
+  return false;
+}

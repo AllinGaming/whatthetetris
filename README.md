@@ -1,8 +1,8 @@
-# What the Tetris
+# What the Triangle
 
 [![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-live-brightgreen)](https://allingaming.github.io/whatthetetris/)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-blue)](https://flutter.dev)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Source--Available-blue.svg)](LICENSE)
 
 Neon triangle-based falling-blocks. The playfield uses triangle halves instead of full squares; opposite halves merge into a full cell when they meet. Seven-bag randomization, a ghost piece, hold slot, three-piece queue, wall kicks, lock delay, music/SFX, and responsive controls support competitive play across web, iOS, and Android.
 
@@ -12,15 +12,11 @@ Full game design, technical architecture (analytics/accounts/subscriptions), mon
 
 | Mode | Category | What's different |
 |---|---|---|
-| **Chill** | Marathon | Narrower 8-column board, a 5-piece pool that drops the two hardest-to-read shapes (S4/Z4), a speed curve with a real ceiling, and a "soft floor" — a spawn that would top out instead clears space so the run keeps going. The easy on-ramp. |
-| **Classic** | Marathon | The steady, predictable speed curve (starts at 700ms/row, decays gently). No speed-boost stacking. |
-| **Arcade** | Marathon | A faster, steeper speed curve from the very first piece, plus a stackable manual speed-boost button for extra risk/reward scoring on top. |
-| **Sprint** | Timed | Clear 40 lines as fast as possible, fixed pace — the clock is the score. Tracks a separate best-time record. |
-| **Ultra** | Timed | Score as much as you can in 2 minutes, on the Classic curve. |
-| **Zen** | Practice | Fixed slow pace, never escalates, soft floor keeps it going indefinitely — practice fusion timing and mirroring with zero stakes. |
-| **Daily Challenge** | Puzzle | One attempt per calendar day on a board that starts **half-filled** with the same deterministic layout for every player that day — clear it back down to empty to win, rather than surviving as long as possible. Tracks a consecutive-day streak (🔥 on the mode card) and whether today's attempt actually cleared. Comes back with a fresh layout tomorrow. Device-local for now — see the note in `lib/services/daily_challenge_service.dart` about what a real cross-player Daily Challenge still needs. |
+| **Classic** | Endless | A narrower 8-column board, five familiar shapes (I/O/T/L/J), a capped speed curve, and two starting cavity fills. Reaching the top ends the run normally. |
+| **Daily Challenge** | Puzzle | A deterministic terrain formation 2–7 rows high, shared by everyone that day. Uses Classic's five shapes and capped pace; reduce the stack until no more than one occupied row remains to win, then retry as often as you like to improve today's best. The streak and completion count advance once per day. |
+| **2 Player** | Online co-op | Create or join a six-character room-code lobby. The host always drops red bottom-left triangles and the guest always drops blue top-right triangles onto one shared 8×20 board. Both pieces fall simultaneously; Mirror is disabled, each player has their own cavity fill and landing preview, and either player can restart after the shared stack tops out. The shared team score has a local personal best and an online leaderboard. |
 
-All modes share the same 7-piece triangle-half catalog (Chill uses a 5-piece subset), the same controls below, and the same cavity-filler/fusion/scoring mechanics.
+The legacy Classic, Arcade, Sprint, Ultra, and Zen implementations remain in code for compatibility and possible future experiments, but are hidden from mode select based on player feedback.
 
 ## How to Play
 
@@ -33,34 +29,36 @@ All modes share the same 7-piece triangle-half catalog (Chill uses a 5-piece sub
 - Hard drop: Space
 - Pause: P or Escape
 - Cavity fill: G — fills one missing half-cell from the bottom up
+- Audio: the speaker button in every game HUD instantly mutes/unmutes both music and sound effects
 - Speed up (Arcade only): button in the side panel (higher speed = faster ticks + score multiplier)
 - Menu: the ☰ button in the side panel returns to mode select
-- Settings (⚙, from mode select): cosmetic theme picker, music/SFX volume, mute, reduce motion, haptics toggle, text/UI size, a one-handed touch-control layout (balanced/left/right), and a Cloud Backup section (see "Live Services" below — currently inactive)
+- Settings (⚙, from mode select): cosmetic theme picker, music/SFX volume, mute, reduce motion, haptics toggle, text/UI size, touch controls, Cloud Backup status, and in-app Privacy Policy/Terms access
 - Stats & Achievements (🏆, from mode select): lifetime stats and a curated achievement list
-- Leaderboards (🏆-adjacent icon, from mode select): per-mode top scores — currently shows "not available yet" (see "Live Services" below)
-- VIP Pass (⭐, from mode select): the subscription paywall — currently shows "not available yet" (see "Live Services" below)
+- Login: play with the automatically created anonymous Firebase player, or use email and password to create or restore a reusable Firebase identity
+- Leaderboards: authenticated Classic, Daily, and 2 Player team-score rankings for anonymous and logged-in Firebase players
+- 2 Player: one player creates a room and shares its six-character code; the second joins that code. Arrow/WASD movement, Q/W rotation, Space hard drop, and G/**Fill** control that player's own piece and cavity-fill charge. Each peer sees a ghost landing preview only for their own falling piece.
 
 **Mobile / narrow window** (<600px wide — native iOS/Android, or a resized browser window): a two-row touch pad provides movement, rotation, mirror, hold, hard drop, cavity fill, and Arcade speed boost. Directional controls repeat while held; one-shot actions never repeat. Controls use 48px targets, tooltips, and semantic labels. Mobile locks to portrait.
 
 ## Rules & Buffs
 - Pieces are built from single triangles; opposite halves can overlap to form full squares.
-- Seven shapes: I4, L4, J4, T4, O4, S4, Z4 — all still single-triangle, uniform-diagonal pieces. Chill mode uses only I4/O4/T4/L4/J4.
-- Pieces use a seven-bag randomizer (five-bag in Chill), so every full cycle contains every available shape exactly once.
-- Line scoring matches Tetris: single 100, double 300, triple 500, Tetris 800 (scaled by level). Level increases every 10 lines. Clearing 4 lines at once triggers a "TETRIS!" banner; consecutive clears build a combo counter.
-- **Fusion Bonus**: locking a piece that completes one or more cells by fusing a triangle half onto a half *already on the board* (rather than an empty cell) awards bonus points, its own toast, and a gold particle burst — this is this game's own answer to a T-spin bonus.
-- **Back-to-back**: consecutive Tetrises (or heavy-fusion clears) award an escalating bonus, same spirit as classic Tetris back-to-back — resets on any clear that doesn't qualify, but survives a non-clearing lock in between.
-- Difficulty has no early ceiling in Classic/Arcade — the speed curve keeps tightening smoothly the longer a run lasts. Chill and Zen use curves that plateau instead. Arcade's curve is steeper than Classic's by default, independent of the speed-boost button.
-- Your best score and best level are saved locally per mode and shown on the mode-select screen; Sprint additionally tracks a best completion time.
-- Cavity filler charges vary by mode (Classic/Arcade start at 1, Chill at 2, Zen at 3); each cleared line grants +1 charge.
+- Seven shapes remain implemented, but visible modes use the simpler I4/O4/T4/L4/J4 set.
+- Visible modes use a five-bag randomizer, so every full cycle contains every available shape exactly once.
+- Line scoring is single 100, double 300, triple 500, four-line clear 800 (scaled by level). Level increases every 10 lines. Clearing 4 lines at once triggers a "TRIANGLE!" banner; consecutive clears build a combo counter.
+- **Fusion Bonus**: locking a piece that completes one or more cells by fusing a triangle half onto a half *already on the board* (rather than an empty cell) awards bonus points, its own toast, and a gold particle burst — a skill-expressive scoring layer unique to the triangle mechanic.
+- **Back-to-back**: consecutive four-line clears (or heavy-fusion clears) award an escalating bonus — it resets on any clear that doesn't qualify, but survives a non-clearing lock in between.
+- Classic and Daily use a capped speed curve that plateaus instead of becoming relentlessly faster.
+- Your best score and best level are saved locally per solo mode and shown on the mode-select screen; 2 Player also saves the shared team best, and Sprint additionally tracks a best completion time.
+- Classic and Daily start with two cavity filler charges. In 2 Player, red and blue each start with one personal charge. Each cleared line awards one charge only to the player whose lock or fill completed it; it is never duplicated to both players.
 - Arcade only: up to eight useful speed boosts stack at 20% faster per press. Boosts do not grant free points; they increase earned score by 15% each and stop once another boost would no longer increase gravity.
 
 ## Cosmetics & Meta Systems
 - **Themes**: three free cosmetic palettes (Neon, Colorblind-Safe, Sunset) swap piece colors, board background, and UI accent as one unit from Settings. Colorblind-Safe uses an Okabe-Ito-derived palette chosen so all seven pieces stay distinguishable under protanopia/deuteranopia/tritanopia simulation.
-- **Stats & Achievements**: lifetime totals (games played, lines cleared, Tetrises, Fusion Bonuses, best combo, mirror flips, cavities filled, playtime), a "recent form" sparkline (your last 20 runs, each as a % of that mode's personal best — normalized so Chill and Ultra scores can share one chart honestly), and a 29-achievement set spanning onboarding through mode-specific mastery, unlocked state derived live from those totals rather than stored separately.
+- **Stats & Achievements**: lifetime totals (games played, lines cleared, four-line clears, Fusion Bonuses, best combo, mirror flips, cavities filled, playtime), a "recent form" sparkline (your last 20 runs, each as a % of that mode's personal best), and a 29-achievement set spanning onboarding through mastery.
 - **Accessibility**: reduce-motion (now also respected by the start-screen/tutorial animations, not just in-game effects), haptics toggle, a text/UI scale slider, and a one-handed touch-control layout that clusters every mobile control toward the left or right thumb instead of spanning the full screen width.
 - **How to Play**: a 6-page walkthrough (movement, Mirror Flip, Fusion Bonus, Back-to-Back & Combo, Hold & Cavity Fill, picking a mode) shown automatically on your first-ever game — but not locked to that moment. A "How to Play" button on the start screen and in Settings reopens the exact same overlay any time. The Mirror Flip and Fusion pages show small looping animations of the actual mechanic instead of just describing it in text.
 - **Share**: once a run ends, a Share button (side panel on desktop, an icon on mobile) opens the native share sheet with your score/level or Sprint time.
-- **Results screen**: every run ends with a recap — final score, level, lines, duration, and (when relevant) Tetrises/Fusion Bonuses/mirror flips/cavity fills, plus any achievement that unlocked *because of that run*, before Play Again/Share/Menu.
+- **Results screen**: every run ends with a recap — final score, level, lines, duration, and (when relevant) four-line clears/Fusion Bonuses/mirror flips/cavity fills, plus any achievement that unlocked *because of that run*, before Play Again/Share/Menu.
 - **Ready countdown**: Sprint and Ultra open with a brief "3-2-1-GO" beat before the clock (and gravity) start, so the timer never starts while you're still getting oriented. Skipped on your very first-ever game, where the tutorial already covers that pause.
 - **Pause Menu**: pausing opens a real menu — mode, live score/level/lines, and Resume/Restart/Settings/Quit — instead of a bare dimmed screen. Restart and Quit both ask for confirmation first.
 - **Feel**: hard drops and big line clears shake the screen harder the more dramatic they are (drop distance, clear size), and a hard drop of 3+ rows lands with an expanding impact ring at the landing cell.
@@ -71,9 +69,9 @@ All modes share the same 7-piece triangle-half catalog (Chill uses a 5-piece sub
 - **Settings, restyled**: Appearance/Audio/Accessibility/Cloud Backup now sit in bordered cards matching the rest of the app, every row has an icon, and the volume/UI-size sliders all show a live percentage at rest.
 
 ## Audio
-Every action has music/SFX feedback — move, rotate, mirror, drops, lock, line clears (scaled by count), Tetris fanfare, Fusion Bonus shimmer, combo ticks, cavity fill, level up, game over, new-best, an achievement-unlock sting, and a danger-zone warning (pulsing red border + tone) once the stack creeps into the top rows. Music switches per mode: a calmer ambient loop for Chill/Zen, a punchier high-energy loop for Arcade, and a steady climbing loop for Classic/Sprint/Ultra/Daily Challenge.
+Every action has music/SFX feedback — move, rotate, mirror, drops, lock, line clears (scaled by count), four-line-clear fanfare, Fusion Bonus shimmer, combo ticks, cavity fill, level up, game over, new-best, an achievement-unlock sting, and a danger-zone warning (pulsing red border + tone) once the stack creeps into the top rows. Menus and room waiting loop `tmusic.mp3`; every gameplay mode loops `zen_classic_arcade_music.mp3` and restores the menu music on exit.
 
-The current audio set (`assets/audio/`) is programmatically synthesized by `tool/generate_audio.py` — real, distinct sounds that ship today rather than silence, meant to be swapped for a commissioned pack later (see `docs/GDD.md` §7). Regenerate it with `python3 tool/generate_audio.py`.
+The SFX in `assets/audio/` are programmatically synthesized by `tool/generate_audio.py`; `tmusic.mp3` and `zen_classic_arcade_music.mp3` are supplied tracks and are not overwritten by that generator. Regenerate the synthesized set with `python3 tool/generate_audio.py`.
 
 ## Running
 ```bash
@@ -89,20 +87,47 @@ flutter test                # unit and widget regression suite
 - Mirroring flips triangle orientation only (piece position stays put).
 - Cavity fills prioritize the lowest rows first.
 - Deterministic board rules live in `lib/game/game_board.dart`; piece sequencing lives in `piece_bag.dart`. Flutter widgets coordinate session timing and render those rules.
-- Every run's inputs are recorded locally into a versioned replay format (`lib/game/replay.dart`, seed + timestamped input log) — groundwork for future server-validated leaderboards, not yet surfaced anywhere in the UI.
-- Best score/level/time remain local to the device, same as audio, settings, and haptics preferences. See [PRIVACY.md](PRIVACY.md) — accurate as written, because every live-service call below fails closed against a placeholder config and never reaches a real network.
+- Every run's inputs are recorded locally into a versioned replay format (`lib/game/replay.dart`, seed + timestamped input log). Replays are not uploaded by the current lightweight leaderboard implementation.
+- Best score/level/time, including the 2 Player team best, remain local to the device. Eligible new personal bests are also submitted to the selected online leaderboard; cloud backup remains disabled.
 - App icons for iOS/Android/web are generated from `assets/icon/` via `flutter_launcher_icons` (`flutter_launcher_icons.yaml`) — regenerate with `dart run flutter_launcher_icons` after changing the source art.
+- Legacy deployment identifiers still contain the former slug in the Dart package name, GitHub Pages route, Firebase project, and native bundle IDs. They are not displayed as the product name and remain temporarily to preserve imports, live services, update identity, and the existing URL. Renaming them requires a coordinated repository/Firebase/store migration rather than a text-only release.
 
-## Live Services (code present, not active)
-Anonymous cloud accounts, cross-device backup, analytics, crash reporting, leaderboards, and a VIP Pass subscription are fully coded — `lib/services/cloud_auth_service.dart`, `cloud_backup_service.dart`, `analytics_service.dart`, `leaderboard_service.dart`, `purchase_service.dart`, plus `firestore.rules` and `functions/src/index.ts` — but **inert**: `lib/firebase_options.dart` is an honestly-labeled placeholder, so every one of these calls fails closed and the game behaves exactly as if none of it existed. `test/live_services_test.dart` locks in that "never throws, always degrades" contract.
+## Live Services
+The GitHub Pages web build uses the production Firebase web app for Analytics, anonymous-by-default accounts, authenticated Classic/Daily/2 Player leaderboards, and 2 Player room signaling. A successful room setup uses four writes to one room document: host reservation, gathered offer, guest claim, and gathered answer. ICE candidates are bundled into the offer/answer instead of becoming separate Firestore documents. After the data channel connects, signaling listeners stop and gameplay is fully peer-to-peer. Players copy the six-character room code and share it themselves through messaging, social, or voice chat—there is no in-game friends system.
 
-To activate:
-1. Create a project at [console.firebase.google.com](https://console.firebase.google.com), run `dart pub global activate flutterfire_cli` then `flutterfire configure` from the repo root — this overwrites `lib/firebase_options.dart` with real values.
-2. Deploy the backend pieces: `firebase deploy --only firestore:rules,functions` (from `functions/`, `npm install` first).
-3. Create a RevenueCat account at [app.revenuecat.com](https://app.revenuecat.com), connect it to real App Store Connect/Play Console products (needs a paid Apple Developer Program membership and a Google Play Console account — both still open per [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)), and replace the placeholder key in `lib/services/purchase_service.dart`.
-4. **Rewrite [PRIVACY.md](PRIVACY.md) before shipping a build with real config** — see `docs/TECHNICAL_ARCHITECTURE.md` §7.
+Cloud backup, VIP, Firebase Functions, and native-platform Firebase remain disabled. Email login is optional; anonymous accounts have the same leaderboard eligibility. Creating an email account links the current anonymous Firebase identity so its leaderboard UID is preserved, while logging into an existing email account restores that account's UID. The client submits only new local personal bests, and a Firestore transaction writes only when the score also improves that player's remote best. Rankings load the top 10 once per board per session, stay cached while the game is open, and query again only after a successful submission or an explicit refresh.
+
+Firebase console setup still required:
+1. Enable **Anonymous** in Authentication → Sign-in method.
+2. Enable **Email/Password** in Authentication → Sign-in method. Leave email-link authentication disabled; the game uses passwords.
+3. Add `allingaming.github.io` under Authentication → Settings → Authorized domains.
+4. Create the Firestore database, then deploy the access rules with `firebase deploy --only firestore:rules`. No Functions deployment is required.
+5. Configure Firestore TTL for `multiplayerRooms.expiresAt` so abandoned signaling rooms are removed.
+6. Review the Firebase Authentication verification and password-reset templates so the sender name, support address, action URL, and copy are production-ready.
+7. Add production TURN credentials to `MultiplayerSessionService` before wide release. Public STUN is sufficient for initial development, but cannot connect every restrictive NAT/firewall pair.
+
+The Privacy Policy and Terms of Use are stored in `PRIVACY.md` and `TERMS.md` and are bundled into the app under Settings → Legal. They are product drafts and should be reviewed by qualified counsel before a broad commercial release.
+
+### Analytics reporting
+
+Analytics uses the random Firebase Auth UID to group repeat activity. A login email is handled by Firebase Authentication and is not added to Analytics event parameters. Analytics records mode selection and solo starts/results; tutorial, stats, settings, and Daily retries; and the 2 Player create/join/share/connection/round/restart funnel. Co-op controls are reported only as per-round totals. Room codes and gameplay snapshots are never included in Analytics events.
+
+| Report question | Events |
+|---|---|
+| Which modes and features are used? | `mode_selected`, `game_start`, `game_over`, `feature_selected`, `daily_retry` |
+| Where do multiplayer players drop out? | `multiplayer_lobby_viewed`, `multiplayer_lobby_action`, `multiplayer_connection` |
+| Do connected players engage and replay? | `multiplayer_round_started`, `multiplayer_round_ended`, `multiplayer_restarted` |
+| Which mechanics are used? | `line_clear`, `fusion_bonus`, `four_line_clear`, `combo`, `mirror_used`, `cavity_fill_used` |
+
+In Google Analytics, open **Admin > Custom definitions** and register event-scoped dimensions for `mode`, `feature`, `action`, `result`, `role`, and `reason`; register event-scoped metrics for `duration_ms`, `score`, `level`, `lines`, `wait_ms`, `moves`, `rotations`, `soft_drops`, `hard_drops`, and `round_number`; and register `last_mode` as a user-scoped dimension. These definitions make the custom parameters available in Explorations and custom reports.
 
 Full design/status detail lives in `docs/TECHNICAL_ARCHITECTURE.md`, `docs/MONETIZATION.md`, and `docs/ROADMAP.md` Phase 3/4.
+
+## License
+
+Copyright © 2024–2026 AllinGaming (GitHub: [@allingaming](https://github.com/allingaming)). The current project is source-available for personal, educational, research, evaluation, and other non-commercial use. Commercial use is reserved to AllinGaming and parties separately authorized in writing. This is not an MIT or OSI-approved open-source license; see [LICENSE](LICENSE) for the complete terms. Third-party components remain under their own licenses.
+
+Earlier versions that were already published under MIT retain the permissions granted for those versions. The current licensing text is a project-owner draft and should be reviewed by qualified intellectual-property counsel before relying on it commercially.
 
 ## Deploy (GitHub Pages)
 - GitHub Actions workflow `deploy.yml` builds `flutter build web --release --base-href=/whatthetetris/` and publishes the `build/web` artifact via GitHub Pages on every push to `main` (no separate branch needed).

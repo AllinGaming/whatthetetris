@@ -4,11 +4,13 @@ import '../models/board.dart';
 import '../models/game_mode.dart';
 import '../models/piece.dart';
 import '../models/theme_palette.dart';
+import '../services/audio_service.dart';
 import 'widgets/floating_toast.dart';
 import 'widgets/hold_repeat_button.dart';
 import 'widgets/juicy_button.dart';
 import 'widgets/neon_text.dart';
 import 'widgets/next_piece_preview.dart';
+import 'widgets/quick_mute_button.dart';
 import 'widgets/stat_row.dart';
 
 class GameSidePanel extends StatelessWidget {
@@ -50,6 +52,7 @@ class GameSidePanel extends StatelessWidget {
     required this.onFillCavities,
     required this.onMenu,
     required this.onShare,
+    this.audio,
   });
 
   final double width;
@@ -93,6 +96,7 @@ class GameSidePanel extends StatelessWidget {
   final VoidCallback onFillCavities;
   final VoidCallback onMenu;
   final VoidCallback onShare;
+  final AudioService? audio;
 
   Widget _holdIcon(
     BuildContext context,
@@ -156,13 +160,15 @@ class GameSidePanel extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'What The Tetris',
+                    'What The Triangle',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                       shadows: neonShadows(accent, intensity: 0.7),
                     ),
                   ),
                 ),
+                if (audio != null)
+                  QuickMuteButton(audio: audio!, compact: true),
                 IconButton(
                   onPressed: onMenu,
                   icon: const Icon(Icons.menu, color: Colors.white70),

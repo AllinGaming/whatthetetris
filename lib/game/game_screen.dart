@@ -106,7 +106,7 @@ class _GameScreenState extends State<GameScreen>
   int _combo = -1;
   int _backToBack = 0;
   int _runFusions = 0;
-  int _runTetrises = 0;
+  int _runFourLineClears = 0;
   int _runBestCombo = 0;
   int _runBestBackToBack = 0;
   int _runMirrorUses = 0;
@@ -126,7 +126,7 @@ class _GameScreenState extends State<GameScreen>
   /// require re-mirroring every single piece.
   bool _lastMirrored = false;
 
-  /// True once [EndCondition.boardCleared] has fired — distinguishes a
+  /// True once [EndCondition.boardReducedToOneRow] has fired — distinguishes a
   /// Daily Challenge win from the ordinary top-out loss that [_endGame]
   /// otherwise represents, for the results screen and [DailyChallengeService].
   bool _challengeCleared = false;
@@ -224,9 +224,8 @@ class _GameScreenState extends State<GameScreen>
     _focusNode.dispose();
     _anim.dispose();
     _boardGestures.dispose();
-    // Music is shared across the whole app now (one track for menu and
-    // every mode), so leaving this screen shouldn't stop it -- it just
-    // keeps playing back on the menu underneath.
+    // Restore the calm waiting/menu loop when this gameplay route closes.
+    unawaited(widget.audio.playMusic(MusicTrack.menu));
     super.dispose();
   }
 
@@ -292,19 +291,6 @@ class _GameScreenState extends State<GameScreen>
 
   void _startGame() {
     if (_finishingGame) return;
-    if (cfg.useDailySeed && widget.dailyChallenge.playedToday) {
-      // Reachable via the results dialog's "Play Again" (guarded against
-      // separately -- see ResultsScreen.onPlayAgain), the pause/play button,
-      // the restart button, and the Space shortcut, all of which are
-      // mode-agnostic controls that don't know Daily only allows one
-      // attempt a day. _startGame is the one place every one of those paths
-      // funnels through, so it's the one place that actually enforces the
-      // rule -- silently restarting would replay today's exact puzzle for
-      // nothing, since DailyChallengeService.recordResult no-ops for a day
-      // that's already recorded.
-      Navigator.of(context).maybePop();
-      return;
-    }
     _timer?.cancel();
     _lockTimer?.cancel();
     _clockTimer?.cancel();
@@ -323,7 +309,7 @@ class _GameScreenState extends State<GameScreen>
     _combo = -1;
     _backToBack = 0;
     _runFusions = 0;
-    _runTetrises = 0;
+    _runFourLineClears = 0;
     _runBestCombo = 0;
     _runBestBackToBack = 0;
     _runMirrorUses = 0;
@@ -511,7 +497,8 @@ class _GameScreenState extends State<GameScreen>
       setState(() {});
       return;
     }
-    if (cfg.endCondition == EndCondition.boardCleared && _board.isEmpty) {
+    if (cfg.endCondition == EndCondition.boardReducedToOneRow &&
+        _board.hasAtMostOneOccupiedRow) {
       _challengeCleared = true;
       _endGame();
       setState(() {});
@@ -715,10 +702,15 @@ class _GameScreenState extends State<GameScreen>
   Future<void> _finishGame() async {
     _finishingGame = true;
     var isNewBest = false;
+    var isLeaderboardBest = false;
     var newlyUnlocked = const <Achievement>[];
     try {
       final priorBest = widget.highScores.bestScore(widget.mode);
       isNewBest = _score > priorBest;
+      final priorLeaderboardBest = cfg.useDailySeed
+          ? widget.dailyChallenge.todaysScore ?? 0
+          : priorBest;
+      isLeaderboardBest = _score > priorLeaderboardBest;
       final formRatio = priorBest == 0
           ? (_score > 0 ? 1.0 : 0.0)
           : (_score / priorBest).clamp(0.0, 1.0);
@@ -759,7 +751,7 @@ class _GameScreenState extends State<GameScreen>
         () => widget.stats.recordRun(
           mode: widget.mode,
           linesCleared: _lines,
-          tetrises: _runTetrises,
+          fourLineClears: _runFourLineClears,
           fusionBonuses: _runFusions,
           bestCombo: _runBestCombo,
           bestBackToBack: _runBestBackToBack,
@@ -820,15 +812,15 @@ class _GameScreenState extends State<GameScreen>
           stats: widget.stats,
         ),
       );
-      final replay = _lastReplay;
-      if (replay != null && _score > 0) {
+      if (isLeaderboardBest && _score > 0) {
         unawaited(
           widget.live.leaderboard.submitScore(
             mode: widget.mode,
             score: _score,
             level: _level,
-            replay: replay,
+            isNewBest: isLeaderboardBest,
             isDaily: cfg.useDailySeed,
+            dailySeed: cfg.useDailySeed ? _seed : null,
           ),
         );
       }
@@ -864,16 +856,14 @@ class _GameScreenState extends State<GameScreen>
         challengeCleared: _challengeCleared,
         durationMs: _stopwatch.elapsedMilliseconds,
         fusions: _runFusions,
-        tetrises: _runTetrises,
+        fourLineClears: _runFourLineClears,
         mirrorUses: _runMirrorUses,
         cavityFills: _runCavityFills,
         newlyUnlocked: newlyUnlocked,
-        onPlayAgain: cfg.useDailySeed
-            ? null
-            : () {
-                Navigator.of(dialogContext).pop();
-                _startGame();
-              },
+        onPlayAgain: () {
+          Navigator.of(dialogContext).pop();
+          _startGame();
+        },
         onShare: () {
           Navigator.of(dialogContext).pop();
           unawaited(_shareResult());
@@ -890,10 +880,10 @@ class _GameScreenState extends State<GameScreen>
     unawaited(widget.audio.play(Sfx.menuTap));
     final text = cfg.lineTarget != null
         ? "I cleared ${cfg.lineTarget} lines in ${cfg.label} in "
-              '${_formatDuration(_stopwatch.elapsed)} on What The Tetris! \u{1F53A}'
+              '${_formatDuration(_stopwatch.elapsed)} on What The Triangle! \u{1F53A}'
         : 'I scored $_score points (Level $_level) in ${cfg.label} on '
-              'What The Tetris! \u{1F53A}';
-    await Share.share('$text\nhttps://allingaming.github.io/whatthetetris/');
+              'What The Triangle! \u{1F53A}';
+    await Share.share(text);
   }
 
   ActivePiece? get _ghostPiece {
@@ -1270,8 +1260,8 @@ class _GameScreenState extends State<GameScreen>
       _combo++;
       _runBestCombo = _runBestCombo > _combo + 1 ? _runBestCombo : _combo + 1;
       if (clearedRows.length == 4) {
-        _runTetrises++;
-        unawaited(widget.live.analytics.tetrisClear());
+        _runFourLineClears++;
+        unawaited(widget.live.analytics.fourLineClear());
       }
 
       final isHardClear = clearedRows.length == 4 || fusions >= 2;
@@ -1291,7 +1281,7 @@ class _GameScreenState extends State<GameScreen>
 
       final accent = Theme.of(context).colorScheme.primary;
       if (clearedRows.length == 4) {
-        _showToast('TETRIS!', Colors.amberAccent, big: true);
+        _showToast('TRIANGLE!', Colors.amberAccent, big: true);
       } else {
         _showToast('+$points', Colors.white);
       }
@@ -1324,17 +1314,17 @@ class _GameScreenState extends State<GameScreen>
     _resolvingLock = false;
     _updateDanger();
     // Sprint-style modes end the instant the line target is hit, rather than
-    // running on unbounded — Ultra/Chill have their own end conditions
+    // running on unbounded — Ultra/Classic have their own end conditions
     // (clock tick, top-out) but nothing was checking this one.
     if (cfg.lineTarget != null && _lines >= cfg.lineTarget!) {
       _endGame();
       setState(() {});
       return;
     }
-    // Daily Challenge's puzzle board is won the instant it's fully empty —
-    // locking a piece always adds fill, so this can only trip via the
-    // collapse above wiping out the board's last remaining rows.
-    if (cfg.endCondition == EndCondition.boardCleared && _board.isEmpty) {
+    // Daily Challenge is complete once only one occupied row remains. Empty
+    // also counts when one move clears the final two rows together.
+    if (cfg.endCondition == EndCondition.boardReducedToOneRow &&
+        _board.hasAtMostOneOccupiedRow) {
       _challengeCleared = true;
       _endGame();
       setState(() {});
@@ -1350,7 +1340,7 @@ class _GameScreenState extends State<GameScreen>
       1 => Sfx.clear1,
       2 => Sfx.clear2,
       3 => Sfx.clear3,
-      _ => Sfx.clearTetris,
+      _ => Sfx.clearFourLine,
     });
   }
 
@@ -1658,7 +1648,10 @@ class _GameScreenState extends State<GameScreen>
   }
 
   Widget _buildDesktopLayout(BuildContext context, BoxConstraints constraints) {
-    final panelWidth = min(260.0, constraints.maxWidth * 0.28);
+    // The 8-column Classic board leaves more horizontal room for the panel,
+    // but a percentage-only width could still squeeze its three previews
+    // below their 188px padded minimum near the desktop breakpoint.
+    final panelWidth = (constraints.maxWidth * 0.28).clamp(220.0, 260.0);
     return Row(
       children: [
         Expanded(child: _buildBoard(context)),
@@ -1702,6 +1695,7 @@ class _GameScreenState extends State<GameScreen>
             _togglePause();
           },
           onShare: _shareResult,
+          audio: widget.audio,
         ),
       ],
     );
@@ -1732,6 +1726,7 @@ class _GameScreenState extends State<GameScreen>
               _togglePause();
             },
             onShare: _shareResult,
+            audio: widget.audio,
           ),
           // The gesture scheme plays entirely on the board itself (swipe to
           // move, tap to mirror or fill a tapped cavity, swipe down to hard

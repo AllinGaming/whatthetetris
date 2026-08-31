@@ -18,7 +18,10 @@ class StatsService extends ChangeNotifier {
 
   int get gamesPlayed => _prefs.getInt('stats_games_played') ?? 0;
   int get totalLinesCleared => _prefs.getInt('stats_total_lines') ?? 0;
-  int get totalTetrises => _prefs.getInt('stats_total_tetrises') ?? 0;
+  int get totalFourLineClears =>
+      _prefs.getInt('stats_total_four_line_clears') ??
+      _prefs.getInt('stats_total_tetrises') ??
+      0;
   int get totalFusionBonuses => _prefs.getInt('stats_total_fusions') ?? 0;
   int get bestComboEver => _prefs.getInt('stats_best_combo') ?? 0;
   int get bestBackToBackEver => _prefs.getInt('stats_best_b2b') ?? 0;
@@ -55,7 +58,7 @@ class StatsService extends ChangeNotifier {
   Future<void> recordRun({
     required GameMode mode,
     required int linesCleared,
-    required int tetrises,
+    required int fourLineClears,
     required int fusionBonuses,
     required int bestCombo,
     required int bestBackToBack,
@@ -67,7 +70,10 @@ class StatsService extends ChangeNotifier {
   }) async {
     await _prefs.setInt('stats_games_played', gamesPlayed + 1);
     await _prefs.setInt('stats_total_lines', totalLinesCleared + linesCleared);
-    await _prefs.setInt('stats_total_tetrises', totalTetrises + tetrises);
+    await _prefs.setInt(
+      'stats_total_four_line_clears',
+      totalFourLineClears + fourLineClears,
+    );
     await _prefs.setInt(
       'stats_total_fusions',
       totalFusionBonuses + fusionBonuses,

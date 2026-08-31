@@ -24,7 +24,7 @@ class CloudBackupService extends ChangeNotifier {
   final CloudAuthService _auth;
   DateTime? _lastSyncedAt;
 
-  bool get available => isFirebaseConfigured && _auth.available;
+  bool get available => isFirebaseCloudBackupConfigured && _auth.available;
   DateTime? get lastSyncedAt => _lastSyncedAt;
 
   DocumentReference<Map<String, dynamic>>? get _userDoc {
@@ -81,9 +81,10 @@ class CloudBackupService extends ChangeNotifier {
             stats.totalLinesCleared,
             remoteStats['totalLinesCleared'],
           ),
-          'totalTetrises': _maxInt(
-            stats.totalTetrises,
-            remoteStats['totalTetrises'],
+          'totalFourLineClears': _maxInt(
+            stats.totalFourLineClears,
+            remoteStats['totalFourLineClears'] ??
+                remoteStats['totalTetrises'], // Legacy cloud field.
           ),
           'totalFusionBonuses': _maxInt(
             stats.totalFusionBonuses,
