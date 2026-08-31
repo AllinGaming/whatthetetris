@@ -193,6 +193,27 @@ class MultiplayerSessionService extends ChangeNotifier {
       'iceServers': [
         {'urls': 'stun:stun.l.google.com:19302'},
         {'urls': 'stun:stun1.l.google.com:19302'},
+        {'urls': 'stun:stun2.l.google.com:19302'},
+        {'urls': 'stun:stun.ekiga.net'},
+        {'urls': 'stun:stun.voiparound.com'},
+        {'urls': 'stun:stun.voipbuster.com'},
+        {'urls': 'stun:stun.voipstunt.com'},
+        {'urls': 'stun:stun.voxgratia.org'},
+        {
+          'urls': 'turn:turn.anyfirewall.com:443?transport=tcp',
+          'username': 'webrtc',
+          'credential': 'webrtc',
+        },
+        {
+          'urls': 'turn:turn.bistri.com:80',
+          'username': 'homeo',
+          'credential': 'homeo',
+        },
+        {
+          'urls': 'turn:numb.viagenie.ca:3478?transport=udp',
+          'username': 'webrtc@live.com',
+          'credential': 'muazkh',
+        },
       ],
       'sdpSemantics': 'unified-plan',
     });
