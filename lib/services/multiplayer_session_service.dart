@@ -189,32 +189,48 @@ class MultiplayerSessionService extends ChangeNotifier {
   }
 
   Future<void> _createPeerConnection() async {
+    final turnUrl = const String.fromEnvironment(
+      'TURN_SERVER_URL',
+      defaultValue: '',
+    );
+    final turnUrlTcp = const String.fromEnvironment(
+      'TURN_SERVER_URL_TCP',
+      defaultValue: '',
+    );
+    final turnUsername = const String.fromEnvironment(
+      'TURN_SERVER_USERNAME',
+      defaultValue: '',
+    );
+    final turnCredential = const String.fromEnvironment(
+      'TURN_SERVER_CREDENTIAL',
+      defaultValue: '',
+    );
+
+    final iceServers = <Map<String, dynamic>>[
+      {'urls': 'stun:stun.l.google.com:19302'},
+      {'urls': 'stun:stun1.l.google.com:19302'},
+      {'urls': 'stun:stun2.l.google.com:19302'},
+      {'urls': 'stun:stun.ekiga.net'},
+      {'urls': 'stun:stun.voiparound.com'},
+      {'urls': 'stun:stun.voipbuster.com'},
+      {'urls': 'stun:stun.voipstunt.com'},
+      {'urls': 'stun:stun.voxgratia.org'},
+      if (turnUrl.isNotEmpty)
+        {
+          'urls': turnUrl,
+          if (turnUsername.isNotEmpty) 'username': turnUsername,
+          if (turnCredential.isNotEmpty) 'credential': turnCredential,
+        },
+      if (turnUrlTcp.isNotEmpty)
+        {
+          'urls': turnUrlTcp,
+          if (turnUsername.isNotEmpty) 'username': turnUsername,
+          if (turnCredential.isNotEmpty) 'credential': turnCredential,
+        },
+    ];
+
     _peerConnection = await createPeerConnection({
-      'iceServers': [
-        {'urls': 'stun:stun.l.google.com:19302'},
-        {'urls': 'stun:stun1.l.google.com:19302'},
-        {'urls': 'stun:stun2.l.google.com:19302'},
-        {'urls': 'stun:stun.ekiga.net'},
-        {'urls': 'stun:stun.voiparound.com'},
-        {'urls': 'stun:stun.voipbuster.com'},
-        {'urls': 'stun:stun.voipstunt.com'},
-        {'urls': 'stun:stun.voxgratia.org'},
-        {
-          'urls': 'turn:turn.anyfirewall.com:443?transport=tcp',
-          'username': 'webrtc',
-          'credential': 'webrtc',
-        },
-        {
-          'urls': 'turn:turn.bistri.com:80',
-          'username': 'homeo',
-          'credential': 'homeo',
-        },
-        {
-          'urls': 'turn:numb.viagenie.ca:3478?transport=udp',
-          'username': 'webrtc@live.com',
-          'credential': 'muazkh',
-        },
-      ],
+      'iceServers': iceServers,
       'sdpSemantics': 'unified-plan',
     });
     _peerConnection!.onConnectionState = (state) {

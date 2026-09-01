@@ -44,11 +44,19 @@ jobs:
       - name: Build web release
         env:
           FIREBASE_WEB_API_KEY: ${{ secrets.FIREBASE_WEB_API_KEY }}
+          TURN_SERVER_URL: ${{ secrets.TURN_SERVER_URL }}
+          TURN_SERVER_URL_TCP: ${{ secrets.TURN_SERVER_URL_TCP }}
+          TURN_SERVER_USERNAME: ${{ secrets.TURN_SERVER_USERNAME }}
+          TURN_SERVER_CREDENTIAL: ${{ secrets.TURN_SERVER_CREDENTIAL }}
         run: |
           flutter build web \
             --release \
             --base-href=/whatthetetris/ \
-            --dart-define=FIREBASE_WEB_API_KEY=${{ secrets.FIREBASE_WEB_API_KEY }}
+            --dart-define=FIREBASE_WEB_API_KEY=${{ secrets.FIREBASE_WEB_API_KEY }} \
+            --dart-define=TURN_SERVER_URL=${{ secrets.TURN_SERVER_URL }} \
+            --dart-define=TURN_SERVER_URL_TCP=${{ secrets.TURN_SERVER_URL_TCP }} \
+            --dart-define=TURN_SERVER_USERNAME=${{ secrets.TURN_SERVER_USERNAME }} \
+            --dart-define=TURN_SERVER_CREDENTIAL=${{ secrets.TURN_SERVER_CREDENTIAL }}
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
