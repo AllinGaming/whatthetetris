@@ -55,11 +55,11 @@ void main() {
   ) async {
     await pumpSettings(tester);
 
-    // Defaults: AudioService music/sfx volume 0.6/0.8, SettingsService
+    // Defaults: AudioService music/sfx volume 0.4/0.9, SettingsService
     // uiScale 1.0 — all three should read a resting value, not just show a
     // bubble while dragging.
-    expect(find.text('60%'), findsOneWidget);
-    expect(find.text('80%'), findsOneWidget);
+    expect(find.text('40%'), findsOneWidget);
+    expect(find.text('90%'), findsOneWidget);
     expect(find.text('100%'), findsOneWidget);
   });
 

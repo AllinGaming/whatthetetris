@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:whatthetetris/game/coop_game_engine.dart';
+import 'package:whatthetetris/models/board.dart';
+import 'package:whatthetetris/models/coop_variant.dart';
 import 'package:whatthetetris/models/piece.dart';
 import 'package:whatthetetris/services/multiplayer_session_service.dart';
 
@@ -28,7 +30,70 @@ void main() {
       );
       expect(
         CoopAction.values.map((action) => action.name),
-        isNot(contains('mirror')),
+        contains('mirror'),
+      );
+      final before = engine.activeFor(CoopPlayer.red)!.mirrored;
+      expect(engine.applyAction(CoopPlayer.red, CoopAction.mirror), isFalse);
+      expect(engine.activeFor(CoopPlayer.red)!.mirrored, before);
+    });
+
+    test('mirror variant flips either player while preserving their color', () {
+      final redEngine = CoopGameEngine(seed: 43, variant: CoopVariant.mirror);
+      expect(redEngine.activeFor(CoopPlayer.red)!.mirrored, isFalse);
+      while (redEngine.applyAction(CoopPlayer.red, CoopAction.left)) {}
+      expect(redEngine.applyAction(CoopPlayer.red, CoopAction.mirror), isTrue);
+      expect(redEngine.activeFor(CoopPlayer.red)!.mirrored, isTrue);
+      expect(
+        redEngine.activeFor(CoopPlayer.red)!.cellsOnBoard(),
+        everyElement(
+          isA<PieceCell>().having(
+            (cell) => cell.tri,
+            'mirrored red triangle',
+            TriHalf.tr,
+          ),
+        ),
+      );
+      expect(
+        redEngine.applyAction(CoopPlayer.red, CoopAction.hardDrop),
+        isTrue,
+      );
+      expect(redEngine.activeFor(CoopPlayer.red)!.mirrored, isTrue);
+      final redSnapshot = CoopGameSnapshot.fromJson(
+        redEngine.snapshot().toJson(),
+      );
+      expect(redSnapshot.variant, CoopVariant.mirror);
+      expect(
+        redSnapshot.buildBoard().expand((row) => row),
+        contains(
+          isA<CellOccupancy>().having(
+            (cell) => cell.tr,
+            'locked mirrored red color',
+            duoBlColor,
+          ),
+        ),
+      );
+
+      final blueEngine = CoopGameEngine(seed: 44, variant: CoopVariant.mirror);
+      expect(blueEngine.activeFor(CoopPlayer.blue)!.mirrored, isTrue);
+      while (blueEngine.applyAction(CoopPlayer.blue, CoopAction.right)) {}
+      expect(
+        blueEngine.applyAction(CoopPlayer.blue, CoopAction.mirror),
+        isTrue,
+      );
+      expect(blueEngine.activeFor(CoopPlayer.blue)!.mirrored, isFalse);
+      expect(
+        blueEngine.applyAction(CoopPlayer.blue, CoopAction.hardDrop),
+        isTrue,
+      );
+      expect(
+        blueEngine.snapshot().buildBoard().expand((row) => row),
+        contains(
+          isA<CellOccupancy>().having(
+            (cell) => cell.bl,
+            'locked mirrored blue color',
+            duoTrColor,
+          ),
+        ),
       );
     });
 
@@ -37,6 +102,15 @@ void main() {
 
       expect(engine.applyAction(CoopPlayer.red, CoopAction.hardDrop), isTrue);
       expect(engine.applyAction(CoopPlayer.blue, CoopAction.hardDrop), isTrue);
+
+      final snapshot = engine.snapshot();
+      final restored = CoopGameSnapshot.fromJson(snapshot.toJson());
+      expect(snapshot.effects, hasLength(2));
+      expect(restored.effects.map((effect) => effect.player), [
+        CoopPlayer.red,
+        CoopPlayer.blue,
+      ]);
+      expect(restored.effect?.player, CoopPlayer.blue);
 
       final occupied = engine.board.cells
           .expand((row) => row)
@@ -61,6 +135,13 @@ void main() {
       final board = restored.buildBoard();
 
       expect(restored.cells, original.cells);
+      expect(restored.variant, CoopVariant.fixed);
+      expect(restored.locks, original.locks);
+      expect(restored.fusions, original.fusions);
+      expect(restored.combo, original.combo);
+      expect(restored.bestCombo, original.bestCombo);
+      expect(restored.redLines, original.redLines);
+      expect(restored.blueLines, original.blueLines);
       expect(restored.redPiece?.toJson(), original.redPiece?.toJson());
       expect(restored.bluePiece?.toJson(), original.bluePiece?.toJson());
       expect(
@@ -74,6 +155,57 @@ void main() {
       expect(board[19][0].bl, duoBlColor);
       expect(board[19][0].tr, duoTrColor);
       expect(board[18][1].full, duoFullColor);
+    });
+
+    test('confirmed locks are carried in snapshots for shared audio cues', () {
+      final engine = CoopGameEngine(seed: 17);
+
+      expect(engine.locks, 0);
+      expect(engine.applyAction(CoopPlayer.red, CoopAction.hardDrop), isTrue);
+
+      final snapshot = engine.snapshot();
+      expect(snapshot.locks, 1);
+      expect(CoopGameSnapshot.fromJson(snapshot.toJson()).locks, 1);
+      expect(CoopGameSnapshot.fromJson(snapshot.toJson()).fusions, 0);
+      expect(snapshot.effect, isNotNull);
+      expect(
+        CoopGameSnapshot.fromJson(snapshot.toJson()).effect?.toJson(),
+        snapshot.effect?.toJson(),
+      );
+    });
+
+    test('consecutive team clears earn combo points and track the clearer', () {
+      final engine = CoopGameEngine(seed: 29);
+
+      void prepareBlueCavityClear() {
+        engine.board.cells.last[0].bl = duoBlColor;
+        for (var col = 1; col < CoopGameEngine.config.cols; col++) {
+          engine.board.cells.last[col].full = duoFullColor;
+        }
+      }
+
+      prepareBlueCavityClear();
+      expect(
+        engine.applyAction(CoopPlayer.blue, CoopAction.fillCavity),
+        isTrue,
+      );
+      expect(engine.score, 100);
+      expect(engine.combo, 1);
+      expect(engine.blueLines, 1);
+      expect(engine.snapshot().effect?.linePoints, 100);
+
+      prepareBlueCavityClear();
+      expect(
+        engine.applyAction(CoopPlayer.blue, CoopAction.fillCavity),
+        isTrue,
+      );
+      expect(engine.score, 250);
+      expect(engine.combo, 2);
+      expect(engine.bestCombo, 2);
+      expect(engine.blueLines, 2);
+      expect(engine.redLines, 0);
+      expect(engine.snapshot().effect?.comboBonus, 50);
+      expect(engine.snapshot().effect?.scoreGain, 150);
     });
 
     test('both players start with one fill and only the clearer recharges', () {

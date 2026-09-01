@@ -10,11 +10,11 @@ What the Triangle is a falling-block puzzle game provided for personal, non-comm
 
 ## 2. Player accounts
 
-The web game creates a Firebase anonymous account so players can use 2 Player rooms and leaderboards without providing a name or email address. A player may optionally create or access an account with an email address and password. You are responsible for keeping the password and email account secure. Creating an email account from an anonymous session preserves that Firebase player ID; logging into a different existing account changes which Firebase player ID receives future leaderboard submissions.
+The web game creates a Firebase anonymous account so players can use 2 Player rooms and leaderboards without providing an email address. A player can choose a public, non-unique player name and may optionally create or access an account with an email address and password. You are responsible for keeping the password and email account secure. Creating an email account from an anonymous session preserves that Firebase player ID; logging into a different existing account changes which Firebase player ID and player name receive future leaderboard submissions.
 
 ## 3. Leaderboards and fair play
 
-Leaderboard participation is optional and has no cash value or prize. Do not falsify scores, automate inputs, tamper with the client, exploit defects, interfere with other players, or bypass security and validation controls. Scores may be rejected or removed, and online access may be restricted, when cheating, abuse, or a technical error is reasonably suspected.
+Leaderboard participation is optional and has no cash value or prize. Do not choose a player name that impersonates another person, infringes rights, contains abusive material, or is intended to mislead. Do not falsify scores, automate inputs, tamper with the client, exploit defects, interfere with other players, or bypass security and validation controls. Names or scores may be changed or removed, and online access may be restricted, when cheating, abuse, infringement, or a technical error is reasonably suspected.
 
 ## 4. Acceptable use
 

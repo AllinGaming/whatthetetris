@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:whatthetetris/models/game_mode.dart';
+import 'package:whatthetetris/models/coop_variant.dart';
 import 'package:whatthetetris/services/high_score_service.dart';
 
 void main() {
@@ -46,6 +47,14 @@ void main() {
     expect(await service.submitMultiplayerScore(1200), isTrue);
     expect(service.bestMultiplayerScore, 1200);
     expect(await service.submitMultiplayerScore(900), isFalse);
+    expect(service.bestMultiplayerScore, 1200);
+
+    expect(service.bestMultiplayerScoreFor(CoopVariant.mirror), 0);
+    expect(
+      await service.submitMultiplayerScore(1800, variant: CoopVariant.mirror),
+      isTrue,
+    );
+    expect(service.bestMultiplayerScoreFor(CoopVariant.mirror), 1800);
     expect(service.bestMultiplayerScore, 1200);
   });
 }

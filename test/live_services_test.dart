@@ -64,6 +64,18 @@ void main() {
       EmailAuthResult.unavailable,
     );
     expect(await auth.deleteAccount(), isFalse);
+    expect(await auth.updatePlayerName('Triangle Ace'), isFalse);
+  });
+
+  test('player names normalize and reject unsafe public labels', () {
+    expect(
+      CloudAuthService.normalizePlayerName('  Triangle   Ace  '),
+      'Triangle Ace',
+    );
+    expect(CloudAuthService.isValidPlayerName('Triangle Ace'), isTrue);
+    expect(CloudAuthService.isValidPlayerName('A'), isFalse);
+    expect(CloudAuthService.isValidPlayerName('name@example.com'), isFalse);
+    expect(CloudAuthService.isValidPlayerName('<script>'), isFalse);
   });
 
   test(

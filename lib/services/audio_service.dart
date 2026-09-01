@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,7 +31,7 @@ enum Sfx {
   achievementUnlock,
 }
 
-extension on Sfx {
+extension SfxAsset on Sfx {
   String get asset => switch (this) {
     Sfx.move => 'move.wav',
     Sfx.rotate => 'rotate.wav',
@@ -74,9 +76,10 @@ enum MusicTrack {
 /// to know whether audio is currently muted or unavailable (e.g. web
 /// autoplay policies before the first user gesture).
 class AudioService extends ChangeNotifier {
-  AudioService(this._prefs) {
-    _musicPlayer.setReleaseMode(ReleaseMode.loop);
-  }
+  AudioService(this._prefs);
+
+  static const double defaultMusicVolume = 0.4;
+  static const double defaultSfxVolume = 0.9;
 
   static const _keyMuted = 'audio_muted';
   static const _keyMusicVolume = 'audio_music_volume';
@@ -84,19 +87,51 @@ class AudioService extends ChangeNotifier {
 
   final SharedPreferences _prefs;
   final AudioPlayer _musicPlayer = AudioPlayer();
-  final List<AudioPlayer> _sfxPool = List.generate(4, (_) => AudioPlayer());
+  // A few effects can legitimately overlap (hard drop + lock + line clear),
+  // especially when both cooperative players act at nearly the same time.
+  final List<AudioPlayer> _sfxPool = List.generate(6, (_) => AudioPlayer());
   int _sfxPoolIndex = 0;
   MusicTrack? _currentTrack;
   int _musicRequest = 0;
   Future<void> _musicOperation = Future.value();
 
   static Future<AudioService> create() async {
-    return AudioService(await SharedPreferences.getInstance());
+    final service = AudioService(await SharedPreferences.getInstance());
+    // Player setup and caching must never delay the first frame. In
+    // particular, plugin channels are unavailable in widget tests and can be
+    // slow to initialize on the web; play() remains able to load on demand.
+    unawaited(service._initializePlayers());
+    return service;
+  }
+
+  Future<void> _initializePlayers() async {
+    try {
+      await _musicPlayer.setReleaseMode(ReleaseMode.loop);
+    } catch (_) {
+      // Audio is optional on unsupported test targets and before web unlocks.
+    }
+    for (final player in _sfxPool) {
+      try {
+        await player.setReleaseMode(ReleaseMode.stop);
+        await player.setPlayerMode(PlayerMode.lowLatency);
+      } catch (_) {
+        // Low-latency mode is not implemented on every platform.
+      }
+    }
+    // Decode/cache the short effects once so the first move or clear does not
+    // pay asset-loading latency. Failure remains non-fatal, as play() can load
+    // an individual effect on demand later.
+    try {
+      await AudioCache.instance.loadAll([
+        for (final sfx in Sfx.values) 'audio/${sfx.asset}',
+      ]);
+    } catch (_) {}
   }
 
   bool get muted => _prefs.getBool(_keyMuted) ?? false;
-  double get musicVolume => _prefs.getDouble(_keyMusicVolume) ?? 0.6;
-  double get sfxVolume => _prefs.getDouble(_keySfxVolume) ?? 0.8;
+  double get musicVolume =>
+      _prefs.getDouble(_keyMusicVolume) ?? defaultMusicVolume;
+  double get sfxVolume => _prefs.getDouble(_keySfxVolume) ?? defaultSfxVolume;
 
   Future<void> setMuted(bool value) async {
     await _prefs.setBool(_keyMuted, value);

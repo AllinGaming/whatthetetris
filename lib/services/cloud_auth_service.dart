@@ -33,6 +33,25 @@ class CloudAuthService extends ChangeNotifier {
   String? get email => _user?.email;
   bool get isAnonymous => _user?.isAnonymous ?? true;
 
+  static final RegExp _playerNamePattern = RegExp(
+    r'^[A-Za-z0-9][A-Za-z0-9 _-]{1,18}[A-Za-z0-9]$',
+  );
+
+  static String normalizePlayerName(String value) =>
+      value.trim().replaceAll(RegExp(r'\s+'), ' ');
+
+  static bool isValidPlayerName(String value) =>
+      _playerNamePattern.hasMatch(normalizePlayerName(value));
+
+  String? get chosenPlayerName {
+    final value = normalizePlayerName(_user?.displayName ?? '');
+    return isValidPlayerName(value) ? value : null;
+  }
+
+  /// The public leaderboard label. Anonymous players and legacy accounts
+  /// without a chosen name retain a stable, non-email fallback.
+  String get playerName => chosenPlayerName ?? 'Player $shortPlayerId';
+
   String get shortPlayerId {
     final value = uid;
     if (value == null || value.isEmpty) return 'OFFLINE';
@@ -122,6 +141,25 @@ class CloudAuthService extends ChangeNotifier {
       return EmailAuthResult.success;
     } catch (error) {
       return _emailFailure(error);
+    }
+  }
+
+  /// Stores the player's public leaderboard name in Firebase Auth so it
+  /// follows the reusable email identity across devices. This is an Auth
+  /// profile update, not a Firestore write.
+  Future<bool> updatePlayerName(String value) async {
+    final normalized = normalizePlayerName(value);
+    if (!isFirebaseConfigured || _user == null || !isValidPlayerName(value)) {
+      return false;
+    }
+    try {
+      await _user!.updateDisplayName(normalized);
+      await _user!.reload();
+      _user = FirebaseAuth.instance.currentUser ?? _user;
+      notifyListeners();
+      return chosenPlayerName == normalized;
+    } catch (_) {
+      return false;
     }
   }
 

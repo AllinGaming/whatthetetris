@@ -12,6 +12,7 @@ import 'package:whatthetetris/ui/account_screen.dart';
 import 'package:whatthetetris/ui/legal_screen.dart';
 
 class _FakeEmailAuthService extends CloudAuthService {
+  String? lastPlayerName;
   String? lastEmail;
   String? lastPassword;
 
@@ -23,6 +24,12 @@ class _FakeEmailAuthService extends CloudAuthService {
 
   @override
   String get shortPlayerId => 'ABC123';
+
+  @override
+  Future<bool> updatePlayerName(String value) async {
+    lastPlayerName = CloudAuthService.normalizePlayerName(value);
+    return true;
+  }
 
   @override
   Future<EmailAuthResult> loginWithEmail({
@@ -67,19 +74,22 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('Player name'), findsOneWidget);
     expect(find.text('Email'), findsOneWidget);
     expect(find.text('Password'), findsOneWidget);
     expect(find.text('Create account'), findsOneWidget);
     expect(find.text('Forgot password?'), findsOneWidget);
 
+    await tester.enterText(find.byType(TextFormField).at(0), 'Triangle Ace');
     await tester.enterText(
-      find.byType(TextFormField).at(0),
+      find.byType(TextFormField).at(1),
       'player@example.com',
     );
-    await tester.enterText(find.byType(TextFormField).at(1), 'triangle123');
+    await tester.enterText(find.byType(TextFormField).at(2), 'triangle123');
     await tester.tap(find.widgetWithText(FilledButton, 'Log in'));
     await tester.pump();
 
+    expect(auth.lastPlayerName, 'Triangle Ace');
     expect(auth.lastEmail, 'player@example.com');
     expect(auth.lastPassword, 'triangle123');
     expect(find.text('Logged in successfully.'), findsOneWidget);

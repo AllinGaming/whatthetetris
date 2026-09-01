@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../game/game_screen.dart';
 import '../game/tutorial_level_screen.dart';
+import '../models/coop_variant.dart';
 import '../models/game_mode.dart';
 import '../models/piece.dart';
 import '../models/pieces.dart';
@@ -197,6 +198,7 @@ class StartScreen extends StatelessWidget {
                               const SizedBox(height: 14),
                               _MenuToolbar(
                                 accent: accent,
+                                audio: audio,
                                 items: [
                                   _ToolbarItem(
                                     icon: Icons.school_outlined,
@@ -358,9 +360,20 @@ class StartScreen extends StatelessWidget {
                               ),
                               const SizedBox(height: 10),
                               _MultiplayerModeCard(
+                                variant: CoopVariant.fixed,
                                 live: live,
                                 theme: theme,
                                 audio: audio,
+                                settings: settings,
+                                highScores: highScores,
+                              ),
+                              const SizedBox(height: 12),
+                              _MultiplayerModeCard(
+                                variant: CoopVariant.mirror,
+                                live: live,
+                                theme: theme,
+                                audio: audio,
+                                settings: settings,
                                 highScores: highScores,
                               ),
                             ],
@@ -381,15 +394,19 @@ class StartScreen extends StatelessWidget {
 
 class _MultiplayerModeCard extends StatelessWidget {
   const _MultiplayerModeCard({
+    required this.variant,
     required this.live,
     required this.theme,
     required this.audio,
+    required this.settings,
     required this.highScores,
   });
 
+  final CoopVariant variant;
   final LiveServices live;
   final ThemeService theme;
   final AudioService audio;
+  final SettingsService settings;
   final HighScoreService highScores;
 
   @override
@@ -411,13 +428,20 @@ class _MultiplayerModeCard extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () {
-            unawaited(live.analytics.featureSelected('multiplayer'));
+            unawaited(audio.play(Sfx.menuTap));
+            unawaited(
+              live.analytics.featureSelected(
+                variant.allowsMirror ? 'multiplayer_mirror' : 'multiplayer',
+              ),
+            );
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => MultiplayerLobbyScreen(
+                  variant: variant,
                   live: live,
                   theme: theme,
                   audio: audio,
+                  settings: settings,
                   highScores: highScores,
                 ),
               ),
@@ -453,20 +477,21 @@ class _MultiplayerModeCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '2 Player',
+                        variant.title,
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
-                        'Red and blue build the same board through a shared '
-                        'room-code lobby.',
+                      Text(
+                        variant.allowsMirror
+                            ? 'Red and blue can mirror their own pieces while building one shared board.'
+                            : 'Red and blue build the same board through a shared room-code lobby.',
                         style: TextStyle(color: Colors.white70, fontSize: 12),
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        'Best team score: ${highScores.bestMultiplayerScore}',
+                        'Best team score: ${highScores.bestMultiplayerScoreFor(variant)}',
                         style: const TextStyle(
                           color: Colors.white54,
                           fontSize: 12,
@@ -476,7 +501,11 @@ class _MultiplayerModeCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Icon(Icons.group, size: 34, color: blue),
+                Icon(
+                  variant.allowsMirror ? Icons.flip : Icons.group,
+                  size: 34,
+                  color: blue,
+                ),
               ],
             ),
           ),
@@ -503,10 +532,15 @@ class _ToolbarItem {
 /// the backdrop — reads as a single toolbar, and wraps to a second line
 /// instead of overflowing on narrow screens.
 class _MenuToolbar extends StatelessWidget {
-  const _MenuToolbar({required this.items, required this.accent});
+  const _MenuToolbar({
+    required this.items,
+    required this.accent,
+    required this.audio,
+  });
 
   final List<_ToolbarItem> items;
   final Color accent;
+  final AudioService audio;
 
   @override
   Widget build(BuildContext context) {
@@ -523,7 +557,10 @@ class _MenuToolbar extends StatelessWidget {
           children: [
             for (final item in items)
               IconButton(
-                onPressed: item.onPressed,
+                onPressed: () {
+                  unawaited(audio.play(Sfx.menuTap));
+                  item.onPressed();
+                },
                 icon: Icon(item.icon, size: 20),
                 tooltip: item.tooltip,
                 color: Colors.white70,
@@ -691,6 +728,7 @@ class _ModeCard extends StatelessWidget {
   bool get _isDaily => mode == GameMode.daily;
 
   void _play(BuildContext context) {
+    unawaited(audio.play(Sfx.menuTap));
     unawaited(live.analytics.modeSelected(mode));
     if (_isDaily && dailyChallenge.playedToday) {
       unawaited(

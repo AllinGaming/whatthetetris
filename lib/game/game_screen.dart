@@ -3,7 +3,6 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../models/achievement.dart';
 import '../models/active_piece.dart';
@@ -24,6 +23,7 @@ import '../ui/settings_screen.dart';
 import '../ui/widgets/floating_toast.dart';
 import '../ui/widgets/pause_menu.dart';
 import '../ui/widgets/results_screen.dart';
+import '../ui/widgets/share_dialog.dart';
 import '../ui/widgets/touch_dpad.dart';
 import 'board_gesture_controller.dart';
 import 'board_painter.dart';
@@ -481,6 +481,7 @@ class _GameScreenState extends State<GameScreen>
     );
     final cleared = _detectFullRows();
     if (cleared.isNotEmpty) {
+      final previousLevel = _level;
       _collapseRows(cleared);
       final points = _scaledScore(_pointsForLines(cleared.length));
       _score += points;
@@ -489,6 +490,11 @@ class _GameScreenState extends State<GameScreen>
       _combo++;
       _reconcileActiveAfterBoardMutation();
       _showToast('POWER CLEAR +$points', Colors.amberAccent);
+      unawaited(_playClearSfx(cleared.length));
+      unawaited(widget.live.analytics.lineClear(cleared.length));
+      if (_level > previousLevel) {
+        unawaited(widget.audio.play(Sfx.levelUp));
+      }
       unawaited(_haptic(HapticFeedback.mediumImpact));
     }
     _updateDanger();
@@ -777,16 +783,21 @@ class _GameScreenState extends State<GameScreen>
       // needs this widget to still be alive.
       if (!mounted) return;
 
+      unawaited(widget.audio.play(Sfx.gameOver));
       if (isNewBest) {
         _showToast('NEW BEST!', Colors.amberAccent);
-        unawaited(widget.audio.play(Sfx.newBest));
+        unawaited(
+          Future<void>.delayed(
+            const Duration(milliseconds: 220),
+            () => widget.audio.play(Sfx.newBest),
+          ),
+        );
         unawaited(_haptic(HapticFeedback.heavyImpact));
         _anim.triggerCelebration();
         for (int c = 0; c < _config.cols; c += 2) {
           _anim.burst(Offset(c + 0.5, 0), Colors.amberAccent, count: 8);
         }
       } else {
-        unawaited(widget.audio.play(Sfx.gameOver));
         unawaited(
           _haptic(
             newlyUnlocked.isNotEmpty
@@ -861,6 +872,7 @@ class _GameScreenState extends State<GameScreen>
         cavityFills: _runCavityFills,
         newlyUnlocked: newlyUnlocked,
         onPlayAgain: () {
+          unawaited(widget.audio.play(Sfx.menuTap));
           Navigator.of(dialogContext).pop();
           _startGame();
         },
@@ -869,6 +881,7 @@ class _GameScreenState extends State<GameScreen>
           unawaited(_shareResult());
         },
         onMenu: () {
+          unawaited(widget.audio.play(Sfx.menuTap));
           Navigator.of(dialogContext).pop();
           Navigator.of(context).pop();
         },
@@ -883,7 +896,16 @@ class _GameScreenState extends State<GameScreen>
               '${_formatDuration(_stopwatch.elapsed)} on What The Triangle! \u{1F53A}'
         : 'I scored $_score points (Level $_level) in ${cfg.label} on '
               'What The Triangle! \u{1F53A}';
-    await Share.share(text);
+    final result = await showTriangleShareDialog(
+      context,
+      title: 'Share your result',
+      message: text,
+    );
+    if (result != null) {
+      unawaited(
+        widget.live.analytics.featureSelected('share_result_${result.name}'),
+      );
+    }
   }
 
   ActivePiece? get _ghostPiece {
@@ -1626,8 +1648,12 @@ class _GameScreenState extends State<GameScreen>
       level: _level,
       lines: _lines,
       onResume: _togglePause,
-      onRestart: _startGame,
+      onRestart: () {
+        unawaited(widget.audio.play(Sfx.menuTap));
+        _startGame();
+      },
       onSettings: () {
+        unawaited(widget.audio.play(Sfx.menuTap));
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => SettingsScreen(
@@ -1643,7 +1669,10 @@ class _GameScreenState extends State<GameScreen>
       // does -- persists the score/stats/achievements and shows the normal
       // Results screen (whose own "Menu" button returns here) -- rather
       // than abandoning the run with nothing saved.
-      onQuit: _endGame,
+      onQuit: () {
+        unawaited(widget.audio.play(Sfx.menuTap));
+        _endGame();
+      },
     );
   }
 
@@ -1679,7 +1708,10 @@ class _GameScreenState extends State<GameScreen>
           toasts: _toasts,
           onRemoveToast: _removeToast,
           onPauseOrPlay: _pauseOrPlay,
-          onRestart: _startGame,
+          onRestart: () {
+            unawaited(widget.audio.play(Sfx.menuTap));
+            _startGame();
+          },
           onMoveLeft: _moveLeft,
           onMoveRight: _moveRight,
           onSoftDrop: _softDrop,

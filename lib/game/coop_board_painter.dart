@@ -5,10 +5,11 @@ import '../models/board.dart';
 import '../models/piece.dart';
 import '../models/theme_palette.dart';
 import 'coop_game_engine.dart';
+import 'game_animations.dart';
 import 'tri_paint.dart';
 
 class CoopBoardPainter extends CustomPainter {
-  const CoopBoardPainter({
+  CoopBoardPainter({
     required this.board,
     required this.config,
     required this.redPiece,
@@ -17,7 +18,10 @@ class CoopBoardPainter extends CustomPainter {
     required this.localPlayer,
     required this.revision,
     required this.theme,
-  });
+    required this.anim,
+    required this.effectCells,
+    required this.clearingRows,
+  }) : super(repaint: anim.repaint);
 
   final List<List<CellOccupancy>> board;
   final Config config;
@@ -27,6 +31,9 @@ class CoopBoardPainter extends CustomPainter {
   final CoopPlayer localPlayer;
   final int revision;
   final ThemePalette theme;
+  final GameAnimations anim;
+  final List<int> effectCells;
+  final List<int> clearingRows;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -71,6 +78,31 @@ class CoopBoardPainter extends CustomPainter {
         );
       }
     }
+
+    if (effectCells.isNotEmpty && anim.lockFlash.isAnimating) {
+      final glow = (1 - anim.lockFlash.value).clamp(0.0, 1.0);
+      final paint = Paint()
+        ..color = Colors.white.withValues(alpha: glow * 0.45)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+      for (final index in effectCells) {
+        final row = index ~/ config.cols;
+        final col = index % config.cols;
+        if (row >= 0 && row < config.rows) {
+          canvas.drawRect(_rect(row, col, cellSize, startY), paint);
+        }
+      }
+    }
+
+    if (clearingRows.isNotEmpty && anim.lineClear.isAnimating) {
+      final flash = _clearFlashEnvelope(anim.lineClear.value);
+      for (final row in clearingRows) {
+        if (row < 0 || row >= config.rows) continue;
+        canvas.drawRect(
+          Rect.fromLTWH(0, startY + row * cellSize, size.width, cellSize),
+          Paint()..color = Colors.white.withValues(alpha: flash * 0.78),
+        );
+      }
+    }
     final localActive = localPlayer == CoopPlayer.red ? redPiece : bluePiece;
     if (localGhost != null && localGhost!.row != localActive?.row) {
       _paintPiece(
@@ -85,13 +117,99 @@ class CoopBoardPainter extends CustomPainter {
     _paintPiece(canvas, redPiece, duoBlColor, cellSize, startY);
     _paintPiece(canvas, bluePiece, duoTrColor, cellSize, startY);
 
+    final particlePaint = Paint();
+    for (final particle in anim.activeParticles) {
+      canvas.drawCircle(
+        Offset(
+          particle.position.dx * cellSize,
+          startY + particle.position.dy * cellSize,
+        ),
+        cellSize * 0.09,
+        particlePaint
+          ..color = particle.color.withValues(alpha: particle.opacity),
+      );
+    }
+
+    final ringOrigin = anim.impactRingOrigin;
+    if (ringOrigin != null && anim.impactRing.isAnimating) {
+      final t = anim.impactRing.value;
+      canvas.drawCircle(
+        Offset(ringOrigin.dx * cellSize, startY + ringOrigin.dy * cellSize),
+        cellSize * (0.3 + t * 1.6),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3 * (1 - t)
+          ..color = Colors.white.withValues(alpha: (1 - t) * 0.65),
+      );
+    }
+
+    if (anim.danger.value > 0) {
+      final pulse = anim.danger.value;
+      canvas.drawRect(
+        Offset.zero & size,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 6 + pulse * 4
+          ..color = Colors.redAccent.withValues(alpha: 0.15 + pulse * 0.35),
+      );
+    }
+
+    if (anim.comboHeat > 0) {
+      final pulse = 0.5 + 0.5 * anim.comboPulse.value;
+      canvas.drawRect(
+        Rect.fromLTWH(0, startY, size.width, config.rows * cellSize),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 4
+          ..color = Color.lerp(
+            theme.accent,
+            Colors.redAccent,
+            anim.comboHeat,
+          )!.withValues(alpha: (0.12 + 0.2 * pulse) * anim.comboHeat)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 8),
+      );
+    }
+
+    if (anim.levelUp.isAnimating) {
+      final t = anim.levelUp.value;
+      final envelope = t < 0.3 ? t / 0.3 : 1 - (t - 0.3) / 0.7;
+      canvas.drawRect(
+        Offset.zero & size,
+        Paint()..color = theme.accent.withValues(alpha: envelope * 0.22),
+      );
+    }
+
+    if (anim.celebration.isAnimating) {
+      final t = anim.celebration.value;
+      final envelope = t < 0.25 ? t / 0.25 : 1 - (t - 0.25) / 0.75;
+      canvas.drawRect(
+        Offset.zero & size,
+        Paint()..color = Colors.amberAccent.withValues(alpha: envelope * 0.28),
+      );
+    }
+
     canvas.drawRect(
       Rect.fromLTWH(0, startY, config.cols * cellSize, config.rows * cellSize),
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2
-        ..color = Colors.white24,
+        ..shader = const LinearGradient(colors: [duoBlColor, duoTrColor])
+            .createShader(
+              Rect.fromLTWH(
+                0,
+                startY,
+                config.cols * cellSize,
+                config.rows * cellSize,
+              ),
+            ),
     );
+  }
+
+  double _clearFlashEnvelope(double t) {
+    if (t < 0.25) return t / 0.25;
+    if (t < 0.5) return 1 - (t - 0.25) / 0.25 * 0.7;
+    if (t < 0.75) return 0.3 + (t - 0.5) / 0.25 * 0.7;
+    return 1 - (t - 0.75) / 0.25;
   }
 
   Rect _rect(int row, int col, double cellSize, double startY) => Rect.fromLTWH(
@@ -108,10 +226,10 @@ class CoopBoardPainter extends CustomPainter {
       return;
     }
     if (occupancy.bl != null) {
-      paintTriHalf(canvas, rect, TriHalf.bl, duoBlColor);
+      paintTriHalf(canvas, rect, TriHalf.bl, occupancy.bl!);
     }
     if (occupancy.tr != null) {
-      paintTriHalf(canvas, rect, TriHalf.tr, duoTrColor);
+      paintTriHalf(canvas, rect, TriHalf.tr, occupancy.tr!);
     }
   }
 
@@ -161,5 +279,7 @@ class CoopBoardPainter extends CustomPainter {
       oldDelegate.bluePiece != bluePiece ||
       oldDelegate.localGhost != localGhost ||
       oldDelegate.localPlayer != localPlayer ||
+      oldDelegate.effectCells != effectCells ||
+      oldDelegate.clearingRows != clearingRows ||
       oldDelegate.theme != theme;
 }

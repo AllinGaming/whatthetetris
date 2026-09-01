@@ -14,6 +14,7 @@ import 'package:whatthetetris/game/board_painter.dart';
 import 'package:whatthetetris/game/game_screen.dart';
 import 'package:whatthetetris/game/tutorial_level_screen.dart';
 import 'package:whatthetetris/main.dart';
+import 'package:whatthetetris/models/coop_variant.dart';
 import 'package:whatthetetris/models/game_mode.dart';
 import 'package:whatthetetris/models/piece.dart';
 import 'package:whatthetetris/services/audio_service.dart';
@@ -182,7 +183,8 @@ void main() {
     expect(find.text('Daily Challenge'), findsOneWidget);
     expect(find.byKey(const ValueKey('daily-mode-icon')), findsOneWidget);
     expect(find.text('2 Player'), findsOneWidget);
-    expect(find.text('Best team score: 0'), findsOneWidget);
+    expect(find.text('2 Player Mirror'), findsOneWidget);
+    expect(find.text('Best team score: 0'), findsNWidgets(2));
     expect(find.text('Chill'), findsNothing);
     expect(find.text('Legacy Classic'), findsNothing);
     expect(find.text('Arcade'), findsNothing);
@@ -196,6 +198,20 @@ void main() {
     await _tapMode(tester, 'Classic');
 
     expect(find.byType(KeyboardListener), findsOneWidget);
+  });
+
+  testWidgets('2 Player Mirror opens a mirror-enabled room lobby', (
+    WidgetTester tester,
+  ) async {
+    await _pumpApp(tester);
+
+    await _tapMode(tester, '2 Player Mirror');
+
+    final lobby = tester.widget<MultiplayerLobbyScreen>(
+      find.byType(MultiplayerLobbyScreen),
+    );
+    expect(lobby.variant, CoopVariant.mirror);
+    expect(find.textContaining('Both players can mirror'), findsOneWidget);
   });
 
   testWidgets('account and leaderboards are reachable from mode select', (

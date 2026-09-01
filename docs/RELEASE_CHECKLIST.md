@@ -29,11 +29,13 @@
 - [ ] Define a versioned replay format containing the seed and accepted player commands.
 - [ ] Validate leaderboard submissions on a trusted service; never trust a client-provided score by itself.
 - [ ] Add abuse controls, retention rules, account deletion, incident response, and an updated privacy policy.
+- [ ] Establish a player-name reporting, moderation, impersonation, and removal process before promoting public leaderboards broadly.
 
 ## Before activating online co-op
 
 - [ ] Enable anonymous Auth, authorize `allingaming.github.io`, deploy `firestore.rules`, and run participant/attacker Firestore Emulator rule tests.
 - [ ] Configure Firestore TTL on `multiplayerRooms.expiresAt` and confirm abandoned room documents are deleted.
 - [ ] Provision a production TURN service with short-lived credentials; verify both relayed and direct connections rather than relying on public STUN alone.
-- [ ] Test two physical devices across same Wi-Fi, different Wi-Fi networks, and Wi-Fi-to-cellular, including backgrounding, disconnects, simultaneous inputs, top-out, restart, and leaving the lobby.
+- [ ] Test both fixed and Mirror variants on two physical devices across same Wi-Fi, different Wi-Fi networks, and Wi-Fi-to-cellular, including mirrored red/blue color ownership, blocked Mirror inputs, backgrounding, disconnects, simultaneous inputs, top-out, restart, and leaving the lobby.
 - [ ] Update and review the privacy policy, store disclosures, data retention, and account/data-deletion behavior before enabling Firebase in a distributed build.
+- [ ] Verify chosen names migrate on existing Classic, current Daily, fixed 2 Player, and 2 Player Mirror entries without changing or lowering their scores.

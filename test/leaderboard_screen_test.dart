@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:whatthetetris/models/game_mode.dart';
+import 'package:whatthetetris/models/coop_variant.dart';
 import 'package:whatthetetris/services/cloud_auth_service.dart';
 import 'package:whatthetetris/services/leaderboard_service.dart';
 import 'package:whatthetetris/ui/leaderboard_screen.dart';
@@ -19,6 +20,9 @@ class _FakeLeaderboardService extends LeaderboardService {
   String get currentPlayerShortId => 'ABC123';
 
   @override
+  String get currentPlayerName => 'Triangle Ace';
+
+  @override
   bool isCurrentPlayer(String uid) => uid == 'me';
 
   @override
@@ -34,7 +38,15 @@ class _FakeLeaderboardService extends LeaderboardService {
   Future<List<LeaderboardEntry>> fetchTopMultiplayer({
     int limit = 10,
     bool forceRefresh = false,
-  }) async => const [LeaderboardEntry(uid: 'me', score: 4321, level: 3)];
+    CoopVariant variant = CoopVariant.fixed,
+  }) async => [
+    LeaderboardEntry(
+      uid: 'me',
+      name: 'Triangle Ace',
+      score: variant.allowsMirror ? 5432 : 4321,
+      level: 3,
+    ),
+  ];
 }
 
 void main() {
@@ -64,12 +76,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(ChoiceChip), findsNWidgets(3));
+    expect(find.byType(ChoiceChip), findsNWidgets(4));
     await tester.tap(find.widgetWithText(ChoiceChip, '2 Player'));
     await tester.pumpAndSettle();
 
     expect(find.text('Shared-board team best'), findsOneWidget);
     expect(find.text('4321'), findsOneWidget);
-    expect(find.text('You'), findsOneWidget);
+    expect(find.text('Triangle Ace (You)'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, '2 Player Mirror'));
+    await tester.pumpAndSettle();
+    expect(find.text('5432'), findsOneWidget);
+    expect(find.text('Mirror shared-board best'), findsOneWidget);
   });
 }

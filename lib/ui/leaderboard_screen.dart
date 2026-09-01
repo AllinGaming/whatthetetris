@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../models/game_mode.dart';
+import '../models/coop_variant.dart';
 import '../services/daily_challenge_service.dart';
 import '../services/leaderboard_service.dart';
 import 'widgets/neon_text.dart';
 
-enum _LeaderboardBoard { classic, daily, multiplayer }
+enum _LeaderboardBoard { classic, daily, multiplayer, multiplayerMirror }
 
 /// Per-mode leaderboards (docs/GDD.md SS6.6), backed by [LeaderboardService].
 /// Only a new local best is submitted, and Firestore rules limit direct writes
@@ -49,6 +50,11 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       _LeaderboardBoard.multiplayer => widget.leaderboard.fetchTopMultiplayer(
         forceRefresh: forceRefresh,
       ),
+      _LeaderboardBoard.multiplayerMirror =>
+        widget.leaderboard.fetchTopMultiplayer(
+          forceRefresh: forceRefresh,
+          variant: CoopVariant.mirror,
+        ),
     };
   }
 
@@ -56,6 +62,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     _LeaderboardBoard.classic => 'Classic',
     _LeaderboardBoard.daily => 'Daily Challenge',
     _LeaderboardBoard.multiplayer => '2 Player',
+    _LeaderboardBoard.multiplayerMirror => '2 Player Mirror',
   };
 
   @override
@@ -149,14 +156,21 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                                       ),
                                     ),
                                     title: Text(
-                                      isYou ? 'You' : 'Player',
+                                      isYou
+                                          ? '${entry.name} (You)'
+                                          : entry.name,
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                     subtitle: Text(
-                                      _selected == _LeaderboardBoard.multiplayer
+                                      _selected ==
+                                              _LeaderboardBoard
+                                                  .multiplayerMirror
+                                          ? 'Mirror shared-board best'
+                                          : _selected ==
+                                                _LeaderboardBoard.multiplayer
                                           ? 'Shared-board team best'
                                           : 'Level ${entry.level}',
                                       style: const TextStyle(
@@ -211,12 +225,24 @@ class _PlayerStatus extends StatelessWidget {
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(
-            (leaderboard.currentPlayerIsAnonymous
-                    ? 'Anonymous player '
-                    : 'Linked player ') +
-                leaderboard.currentPlayerShortId,
-            style: const TextStyle(color: Colors.white70),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                leaderboard.currentPlayerName,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                (leaderboard.currentPlayerIsAnonymous
+                        ? 'Anonymous player '
+                        : 'Logged-in player ') +
+                    leaderboard.currentPlayerShortId,
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+            ],
           ),
         ),
       ],

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/cloud_auth_service.dart';
+import '../services/daily_challenge_service.dart';
 import '../services/live_services.dart';
 
 class AccountScreen extends StatefulWidget {
@@ -16,6 +17,7 @@ class AccountScreen extends StatefulWidget {
 
 class _AccountScreenState extends State<AccountScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _busy = false;
@@ -24,12 +26,14 @@ class _AccountScreenState extends State<AccountScreen> {
   @override
   void initState() {
     super.initState();
+    _nameController.text = widget.live.auth.chosenPlayerName ?? '';
     unawaited(widget.live.analytics.screenViewed('account'));
     unawaited(widget.live.analytics.featureSelected('account'));
   }
 
   @override
   void dispose() {
+    _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -43,6 +47,15 @@ class _AccountScreenState extends State<AccountScreen> {
         at == email.length - 1 ||
         !email.substring(at).contains('.')) {
       return 'Enter a valid email address.';
+    }
+    return null;
+  }
+
+  String? _validatePlayerName(String? value) {
+    final name = CloudAuthService.normalizePlayerName(value ?? '');
+    if (name.isEmpty) return 'Choose a player name.';
+    if (!CloudAuthService.isValidPlayerName(name)) {
+      return 'Use 3–20 letters, numbers, spaces, _ or -.';
     }
     return null;
   }
@@ -71,10 +84,57 @@ class _AccountScreenState extends State<AccountScreen> {
             email: _emailController.text,
             password: _passwordController.text,
           );
+    var nameSaved = false;
+    if (result == EmailAuthResult.success) {
+      nameSaved = await _applyPlayerName();
+    }
     if (!mounted) return;
     setState(() => _busy = false);
     if (result == EmailAuthResult.success) _passwordController.clear();
-    _showMessage(_authMessage(result, create: create));
+    _showMessage(
+      result == EmailAuthResult.success && !nameSaved
+          ? 'Logged in, but the player name could not be saved. Try again.'
+          : _authMessage(result, create: create),
+    );
+  }
+
+  Future<void> _savePlayerName() async {
+    if (_busy) return;
+    final error = _validatePlayerName(_nameController.text);
+    if (error != null) {
+      _showMessage(error);
+      return;
+    }
+    setState(() => _busy = true);
+    final success = await _applyPlayerName(syncIfUnchanged: true);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    _showMessage(
+      success
+          ? 'Player name saved for future leaderboard entries.'
+          : 'Could not save that player name. Please try again.',
+    );
+  }
+
+  Future<bool> _applyPlayerName({bool syncIfUnchanged = false}) async {
+    final desiredName = CloudAuthService.normalizePlayerName(
+      _nameController.text,
+    );
+    final changed = widget.live.auth.chosenPlayerName != desiredName;
+
+    if (changed) {
+      unawaited(widget.live.analytics.featureSelected('account_name_changed'));
+    }
+    final saved =
+        !changed || await widget.live.auth.updatePlayerName(desiredName);
+    if (saved && (changed || syncIfUnchanged)) {
+      // This reads only the four visible boards and writes only existing
+      // entries whose public name actually changed.
+      await widget.live.leaderboard.syncCurrentPlayerName(
+        dailySeed: DailyChallengeService.seedForToday(),
+      );
+    }
+    return saved;
   }
 
   Future<void> _resetPassword() async {
@@ -200,9 +260,20 @@ class _AccountScreenState extends State<AccountScreen> {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Player ${auth.shortPlayerId}',
+                                auth.playerName,
                                 textAlign: TextAlign.center,
-                                style: const TextStyle(color: Colors.white70),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                'Player ID ${auth.shortPlayerId}',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: 11,
+                                ),
                               ),
                               const SizedBox(height: 10),
                               Text(
@@ -226,6 +297,25 @@ class _AccountScreenState extends State<AccountScreen> {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.stretch,
                                       children: [
+                                        TextFormField(
+                                          controller: _nameController,
+                                          enabled: !_busy,
+                                          textInputAction: TextInputAction.next,
+                                          autofillHints: const [
+                                            AutofillHints.nickname,
+                                          ],
+                                          validator: _validatePlayerName,
+                                          maxLength: 20,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Player name',
+                                            helperText:
+                                                'Public on leaderboards; names are not unique.',
+                                            prefixIcon: Icon(
+                                              Icons.badge_outlined,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 12),
                                         TextFormField(
                                           controller: _emailController,
                                           enabled: !_busy,
@@ -312,11 +402,32 @@ class _AccountScreenState extends State<AccountScreen> {
                                     ),
                                   ),
                                 )
-                              else
+                              else ...[
+                                TextFormField(
+                                  controller: _nameController,
+                                  enabled: !_busy,
+                                  maxLength: 20,
+                                  textInputAction: TextInputAction.done,
+                                  onFieldSubmitted: (_) => _savePlayerName(),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Player name',
+                                    helperText:
+                                        'Public on leaderboards; names are not unique.',
+                                    prefixIcon: Icon(Icons.badge_outlined),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                FilledButton.icon(
+                                  onPressed: _busy ? null : _savePlayerName,
+                                  icon: const Icon(Icons.save_outlined),
+                                  label: const Text('Save player name'),
+                                ),
+                                const SizedBox(height: 8),
                                 OutlinedButton(
                                   onPressed: _busy ? null : _switchToAnonymous,
                                   child: const Text('Log out'),
                                 ),
+                              ],
                               if (_busy) ...[
                                 const SizedBox(height: 20),
                                 const Center(
@@ -326,8 +437,9 @@ class _AccountScreenState extends State<AccountScreen> {
                               const SizedBox(height: 20),
                               const Text(
                                 'Your email is used only for Firebase login. '
-                                'Leaderboards display a short player ID, not '
-                                'your email address.',
+                                'Your chosen player name is public on '
+                                'leaderboards; your email address is never '
+                                'shown there.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: Colors.white38,

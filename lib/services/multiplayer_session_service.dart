@@ -8,6 +8,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../firebase_options.dart';
 import '../game/coop_game_engine.dart';
+import '../models/coop_variant.dart';
 import 'cloud_auth_service.dart';
 
 enum MultiplayerConnectionStatus {
@@ -48,12 +49,14 @@ class MultiplayerSessionService extends ChangeNotifier {
   bool _disposed = false;
   MultiplayerConnectionStatus _status = MultiplayerConnectionStatus.idle;
   CoopPlayer? _player;
+  CoopVariant _variant = CoopVariant.fixed;
   String? _roomCode;
   String? _error;
 
   bool get available => isFirebaseMultiplayerConfigured && _auth.available;
   MultiplayerConnectionStatus get status => _status;
   CoopPlayer? get player => _player;
+  CoopVariant get variant => _variant;
   String? get roomCode => _roomCode;
   String? get error => _error;
   bool get connected => _status == MultiplayerConnectionStatus.connected;
@@ -72,11 +75,12 @@ class MultiplayerSessionService extends ChangeNotifier {
   static bool isValidRoomCode(String code) =>
       _validCode.hasMatch(code.trim().toUpperCase());
 
-  Future<String> createRoom() async {
+  Future<String> createRoom({CoopVariant variant = CoopVariant.fixed}) async {
     _requireAvailable();
     await close();
     _setStatus(MultiplayerConnectionStatus.creatingRoom);
     _player = CoopPlayer.red;
+    _variant = variant;
     try {
       final uid = _auth.uid!;
       DocumentReference<Map<String, dynamic>>? room;
@@ -88,6 +92,7 @@ class MultiplayerSessionService extends ChangeNotifier {
           if (snapshot.exists) return false;
           transaction.set(candidate, {
             'hostUid': uid,
+            'variant': variant.name,
             'status': 'waiting',
             'createdAt': FieldValue.serverTimestamp(),
             'updatedAt': FieldValue.serverTimestamp(),
@@ -163,6 +168,7 @@ class MultiplayerSessionService extends ChangeNotifier {
       });
 
       _room = room;
+      _variant = CoopVariant.fromName(roomData['variant']);
       await _createPeerConnection();
       _peerConnection!.onDataChannel = _attachDataChannel;
       final offer = Map<String, dynamic>.from(
@@ -396,6 +402,7 @@ class MultiplayerSessionService extends ChangeNotifier {
     _room = null;
     _roomCode = null;
     _player = null;
+    _variant = CoopVariant.fixed;
     _remoteDescriptionSet = false;
     _settingRemoteDescription = false;
     _signalingComplete = false;

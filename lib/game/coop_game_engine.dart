@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/active_piece.dart';
 import '../models/board.dart';
+import '../models/coop_variant.dart';
 import '../models/piece.dart';
 import '../models/pieces.dart';
 import 'game_board.dart';
@@ -18,16 +19,16 @@ enum CoopPlayer {
   bool get mirrored => this == CoopPlayer.blue;
 }
 
-/// Deliberately has no mirror action: each peer permanently owns one
-/// triangle orientation so cooperation, not self-mirroring, completes cells.
-/// Cavity fills use separate per-player charge inventories. Mirror stays out
-/// of the protocol because each peer permanently owns one triangle direction.
+/// Player inputs shared by both cooperative variants. The fixed variant
+/// rejects [mirror]; the mirror variant accepts it while preserving each
+/// player's red or blue ownership. Cavity fills use separate inventories.
 enum CoopAction {
   left,
   right,
   softDrop,
   rotateLeft,
   rotateRight,
+  mirror,
   hardDrop,
   fillCavity,
 }
@@ -38,6 +39,7 @@ class CoopActivePieceState {
     required this.rotation,
     required this.row,
     required this.col,
+    required this.mirrored,
   });
 
   factory CoopActivePieceState.fromPiece(ActivePiece piece) =>
@@ -46,27 +48,32 @@ class CoopActivePieceState {
         rotation: piece.rotation,
         row: piece.row,
         col: piece.col,
+        mirrored: piece.mirrored,
       );
 
-  factory CoopActivePieceState.fromJson(Map<String, dynamic> json) =>
-      CoopActivePieceState(
-        name: json['name'] as String,
-        rotation: (json['rotation'] as num).toInt(),
-        row: (json['row'] as num).toInt(),
-        col: (json['col'] as num).toInt(),
-      );
+  factory CoopActivePieceState.fromJson(
+    Map<String, dynamic> json, {
+    required CoopPlayer player,
+  }) => CoopActivePieceState(
+    name: json['name'] as String,
+    rotation: (json['rotation'] as num).toInt(),
+    row: (json['row'] as num).toInt(),
+    col: (json['col'] as num).toInt(),
+    mirrored: json['mirrored'] as bool? ?? player.mirrored,
+  );
 
   final String name;
   final int rotation;
   final int row;
   final int col;
+  final bool mirrored;
 
   ActivePiece toPiece(CoopPlayer player) => ActivePiece(
     type: Pieces.all.firstWhere((piece) => piece.name == name),
     rotation: rotation,
     row: row,
     col: col,
-    mirrored: player.mirrored,
+    mirrored: mirrored,
   );
 
   Map<String, dynamic> toJson() => {
@@ -74,22 +81,115 @@ class CoopActivePieceState {
     'rotation': rotation,
     'row': row,
     'col': col,
+    'mirrored': mirrored,
+  };
+}
+
+/// One authoritative gameplay moment carried with a snapshot so both peers
+/// render the same score callouts, particles, flashes, and impact feedback.
+/// This never touches Firestore; it travels only over the WebRTC data channel.
+class CoopEffectState {
+  const CoopEffectState({
+    required this.id,
+    required this.player,
+    required this.cellIndexes,
+    required this.clearedRows,
+    required this.fusionCount,
+    required this.fusionPoints,
+    required this.linePoints,
+    required this.comboCount,
+    required this.comboBonus,
+    required this.backToBackCount,
+    required this.backToBackBonus,
+    required this.scoreGain,
+    required this.hardDropDistance,
+    required this.cavityFill,
+  });
+
+  factory CoopEffectState.fromJson(Map<String, dynamic> json) =>
+      CoopEffectState(
+        id: (json['id'] as num).toInt(),
+        player: CoopPlayer.values.firstWhere(
+          (value) => value.name == json['player'],
+        ),
+        cellIndexes: (json['cellIndexes'] as List<dynamic>? ?? const [])
+            .map((value) => (value as num).toInt())
+            .toList(growable: false),
+        clearedRows: (json['clearedRows'] as List<dynamic>? ?? const [])
+            .map((value) => (value as num).toInt())
+            .toList(growable: false),
+        fusionCount: (json['fusionCount'] as num?)?.toInt() ?? 0,
+        fusionPoints: (json['fusionPoints'] as num?)?.toInt() ?? 0,
+        linePoints: (json['linePoints'] as num?)?.toInt() ?? 0,
+        comboCount: (json['comboCount'] as num?)?.toInt() ?? 0,
+        comboBonus: (json['comboBonus'] as num?)?.toInt() ?? 0,
+        backToBackCount: (json['backToBackCount'] as num?)?.toInt() ?? 0,
+        backToBackBonus: (json['backToBackBonus'] as num?)?.toInt() ?? 0,
+        scoreGain: (json['scoreGain'] as num?)?.toInt() ?? 0,
+        hardDropDistance: (json['hardDropDistance'] as num?)?.toInt() ?? 0,
+        cavityFill: json['cavityFill'] as bool? ?? false,
+      );
+
+  final int id;
+  final CoopPlayer player;
+  final List<int> cellIndexes;
+  final List<int> clearedRows;
+  final int fusionCount;
+  final int fusionPoints;
+  final int linePoints;
+  final int comboCount;
+  final int comboBonus;
+  final int backToBackCount;
+  final int backToBackBonus;
+  final int scoreGain;
+  final int hardDropDistance;
+  final bool cavityFill;
+
+  int get lineCount => clearedRows.length;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'player': player.name,
+    'cellIndexes': cellIndexes,
+    'clearedRows': clearedRows,
+    'fusionCount': fusionCount,
+    'fusionPoints': fusionPoints,
+    'linePoints': linePoints,
+    'comboCount': comboCount,
+    'comboBonus': comboBonus,
+    'backToBackCount': backToBackCount,
+    'backToBackBonus': backToBackBonus,
+    'scoreGain': scoreGain,
+    'hardDropDistance': hardDropDistance,
+    'cavityFill': cavityFill,
   };
 }
 
 /// Compact host-authoritative state sent over the WebRTC data channel.
 /// Locked cells use a bit mask: 1 = red/bottom-left, 2 = blue/top-right,
-/// 4 = a full cell. A complete red+blue fusion is therefore 3.
+/// 4 = a full cell, 8 = blue/bottom-left, 16 = red/top-right. The last two
+/// bits preserve player color after a Mirror action while older fixed-mode
+/// snapshots remain backward compatible.
 class CoopGameSnapshot {
   const CoopGameSnapshot({
     required this.revision,
     required this.rows,
     required this.cols,
     required this.cells,
+    this.variant = CoopVariant.fixed,
     required this.redPiece,
     required this.bluePiece,
     required this.score,
     required this.lines,
+    required this.locks,
+    required this.fusions,
+    required this.combo,
+    required this.bestCombo,
+    required this.backToBack,
+    required this.redLines,
+    required this.blueLines,
+    required this.effect,
+    this.effects = const [],
     required this.redCavityCharges,
     required this.blueCavityCharges,
     required this.gameOver,
@@ -104,22 +204,47 @@ class CoopGameSnapshot {
     if (cells.length != rows * cols) {
       throw const FormatException('Invalid cooperative board size');
     }
-    CoopActivePieceState? parsePiece(Object? value) => value == null
+    CoopActivePieceState? parsePiece(Object? value, CoopPlayer player) =>
+        value == null
         ? null
         : CoopActivePieceState.fromJson(
             Map<String, dynamic>.from(value as Map<dynamic, dynamic>),
+            player: player,
           );
 
+    CoopEffectState? parseEffect(Object? value) => value is Map
+        ? CoopEffectState.fromJson(Map<String, dynamic>.from(value))
+        : null;
+    final legacyEffect = parseEffect(json['effect']);
+    final effects = json['effects'] is List
+        ? (json['effects'] as List<dynamic>)
+              .map(parseEffect)
+              .whereType<CoopEffectState>()
+              .toList(growable: false)
+        : <CoopEffectState>[];
+    final effectHistory = effects.isNotEmpty
+        ? effects
+        : [if (legacyEffect != null) legacyEffect];
     final legacyCavityCharges = (json['cavityCharges'] as num?)?.toInt();
     return CoopGameSnapshot(
       revision: (json['revision'] as num).toInt(),
       rows: rows,
       cols: cols,
       cells: cells,
-      redPiece: parsePiece(json['redPiece']),
-      bluePiece: parsePiece(json['bluePiece']),
+      variant: CoopVariant.fromName(json['variant']),
+      redPiece: parsePiece(json['redPiece'], CoopPlayer.red),
+      bluePiece: parsePiece(json['bluePiece'], CoopPlayer.blue),
       score: (json['score'] as num).toInt(),
       lines: (json['lines'] as num).toInt(),
+      locks: (json['locks'] as num?)?.toInt() ?? 0,
+      fusions: (json['fusions'] as num?)?.toInt() ?? 0,
+      combo: (json['combo'] as num?)?.toInt() ?? 0,
+      bestCombo: (json['bestCombo'] as num?)?.toInt() ?? 0,
+      backToBack: (json['backToBack'] as num?)?.toInt() ?? 0,
+      redLines: (json['redLines'] as num?)?.toInt() ?? 0,
+      blueLines: (json['blueLines'] as num?)?.toInt() ?? 0,
+      effect: effectHistory.isEmpty ? null : effectHistory.last,
+      effects: List<CoopEffectState>.unmodifiable(effectHistory),
       redCavityCharges:
           (json['redCavityCharges'] as num?)?.toInt() ??
           legacyCavityCharges ??
@@ -133,10 +258,20 @@ class CoopGameSnapshot {
   final int rows;
   final int cols;
   final List<int> cells;
+  final CoopVariant variant;
   final CoopActivePieceState? redPiece;
   final CoopActivePieceState? bluePiece;
   final int score;
   final int lines;
+  final int locks;
+  final int fusions;
+  final int combo;
+  final int bestCombo;
+  final int backToBack;
+  final int redLines;
+  final int blueLines;
+  final CoopEffectState? effect;
+  final List<CoopEffectState> effects;
   final int redCavityCharges;
   final int blueCavityCharges;
   final bool gameOver;
@@ -180,21 +315,33 @@ class CoopGameSnapshot {
       } else {
         if (mask & 1 != 0) cell.bl = duoBlColor;
         if (mask & 2 != 0) cell.tr = duoTrColor;
+        if (mask & 8 != 0) cell.bl = duoTrColor;
+        if (mask & 16 != 0) cell.tr = duoBlColor;
       }
       return cell;
     });
   });
 
   Map<String, dynamic> toJson() => {
-    'version': 3,
+    'version': 8,
     'revision': revision,
     'rows': rows,
     'cols': cols,
     'cells': cells,
+    'variant': variant.name,
     'redPiece': redPiece?.toJson(),
     'bluePiece': bluePiece?.toJson(),
     'score': score,
     'lines': lines,
+    'locks': locks,
+    'fusions': fusions,
+    'combo': combo,
+    'bestCombo': bestCombo,
+    'backToBack': backToBack,
+    'redLines': redLines,
+    'blueLines': blueLines,
+    'effect': effect?.toJson(),
+    'effects': effects.map((value) => value.toJson()).toList(growable: false),
     'redCavityCharges': redCavityCharges,
     'blueCavityCharges': blueCavityCharges,
     'gameOver': gameOver,
@@ -205,7 +352,7 @@ class CoopGameSnapshot {
 /// applies both players' actions and broadcasts snapshots, avoiding two
 /// devices independently resolving simultaneous locks or line clears.
 class CoopGameEngine {
-  CoopGameEngine({required int seed})
+  CoopGameEngine({required int seed, this.variant = CoopVariant.fixed})
     : _redBag = PieceBag(random: Random(seed ^ 0x52ED), pieces: _coopPieces),
       _blueBag = PieceBag(random: Random(seed ^ 0xB1E0), pieces: _coopPieces),
       board = GameBoard(config) {
@@ -225,10 +372,23 @@ class CoopGameEngine {
   final PieceBag _redBag;
   final PieceBag _blueBag;
   final GameBoard board;
+  final CoopVariant variant;
   ActivePiece? _redPiece;
   ActivePiece? _bluePiece;
+  bool _redMirrored = false;
+  bool _blueMirrored = true;
   int score = 0;
   int lines = 0;
+  int locks = 0;
+  int fusions = 0;
+  int combo = 0;
+  int bestCombo = 0;
+  int backToBack = 0;
+  int redLines = 0;
+  int blueLines = 0;
+  int _effectId = 0;
+  CoopEffectState? _effect;
+  final List<CoopEffectState> _recentEffects = [];
   int _redCavityCharges = 1;
   int _blueCavityCharges = 1;
   int revision = 0;
@@ -276,6 +436,7 @@ class CoopGameEngine {
       CoopAction.softDrop => _softDrop(player),
       CoopAction.rotateLeft => _rotate(player, -1),
       CoopAction.rotateRight => _rotate(player, 1),
+      CoopAction.mirror => variant.allowsMirror && _mirror(player),
       CoopAction.hardDrop => _hardDrop(player),
       CoopAction.fillCavity => false,
     };
@@ -289,17 +450,35 @@ class CoopGameEngine {
     );
     if (filled == null) return false;
 
+    final scoreBefore = score;
     _addCavityCharges(player, -1);
     final fullRows = board.detectFullRows();
+    var award = const _CoopClearAward();
     if (fullRows.isNotEmpty) {
+      award = _awardClear(player, fullRows, fusionCount: 0);
       board.collapseRows(fullRows);
-      lines += fullRows.length;
       // Exactly one recharge per line, awarded only to the player whose
       // action completed it rather than duplicated into both inventories.
-      _addCavityCharges(player, fullRows.length);
-      score += _lineClearScore(fullRows.length);
       _shiftBothAfterClear(fullRows);
     }
+    _recordEffect(
+      CoopEffectState(
+        id: ++_effectId,
+        player: player,
+        cellIndexes: [filled.row * config.cols + filled.col],
+        clearedRows: List<int>.unmodifiable(fullRows),
+        fusionCount: 0,
+        fusionPoints: 0,
+        linePoints: award.linePoints,
+        comboCount: combo,
+        comboBonus: award.comboBonus,
+        backToBackCount: backToBack,
+        backToBackBonus: award.backToBackBonus,
+        scoreGain: score - scoreBefore,
+        hardDropDistance: 0,
+        cavityFill: true,
+      ),
+    );
     revision++;
     return true;
   }
@@ -358,6 +537,20 @@ class CoopGameEngine {
     return false;
   }
 
+  bool _mirror(CoopPlayer player) {
+    final piece = activeFor(player)!;
+    final next = piece.copyWith(mirrored: !piece.mirrored);
+    if (!_canPlace(player, next)) return false;
+    _setActive(player, next);
+    if (player == CoopPlayer.red) {
+      _redMirrored = next.mirrored;
+    } else {
+      _blueMirrored = next.mirrored;
+    }
+    revision++;
+    return true;
+  }
+
   bool _hardDrop(CoopPlayer player) {
     var piece = activeFor(player)!;
     var distance = 0;
@@ -368,29 +561,94 @@ class CoopGameEngine {
       distance++;
     }
     _setActive(player, piece);
-    score += distance * 2;
-    _lock(player);
+    _lock(player, hardDropDistance: distance, dropPoints: distance * 2);
     return true;
   }
 
-  void _lock(CoopPlayer player) {
+  void _lock(
+    CoopPlayer player, {
+    int hardDropDistance = 0,
+    int dropPoints = 0,
+  }) {
     final piece = activeFor(player);
     if (piece == null || gameOver) return;
-    final fusions = board.countFusions(piece);
+    final scoreBefore = score;
+    final lockedCells = piece.cellsOnBoard();
+    final newFusions = board.countFusions(piece);
     board.lock(piece, colorForCell: (_) => player.color);
     _setActive(player, null);
-    score += 10 + fusions * 25;
+    locks++;
+    fusions += newFusions;
+    final fusionPoints = newFusions * 25 * (1 + lines ~/ 10);
+    score += dropPoints + 10 + fusionPoints;
 
     final fullRows = board.detectFullRows();
+    var award = const _CoopClearAward();
     if (fullRows.isNotEmpty) {
+      award = _awardClear(player, fullRows, fusionCount: newFusions);
       board.collapseRows(fullRows);
-      lines += fullRows.length;
-      _addCavityCharges(player, fullRows.length);
-      score += _lineClearScore(fullRows.length);
       _shiftOtherAfterClear(_other(player), fullRows);
+    } else {
+      combo = 0;
     }
+    _recordEffect(
+      CoopEffectState(
+        id: ++_effectId,
+        player: player,
+        cellIndexes: [
+          for (final cell in lockedCells) cell.row * config.cols + cell.col,
+        ],
+        clearedRows: List<int>.unmodifiable(fullRows),
+        fusionCount: newFusions,
+        fusionPoints: fusionPoints,
+        linePoints: award.linePoints,
+        comboCount: combo,
+        comboBonus: award.comboBonus,
+        backToBackCount: backToBack,
+        backToBackBonus: award.backToBackBonus,
+        scoreGain: score - scoreBefore,
+        hardDropDistance: hardDropDistance,
+        cavityFill: false,
+      ),
+    );
     revision++;
     if (!gameOver) _spawn(player);
+  }
+
+  _CoopClearAward _awardClear(
+    CoopPlayer player,
+    List<int> fullRows, {
+    required int fusionCount,
+  }) {
+    final level = 1 + lines ~/ 10;
+    final linePoints = _lineClearScore(fullRows.length) * level;
+    lines += fullRows.length;
+    if (player == CoopPlayer.red) {
+      redLines += fullRows.length;
+    } else {
+      blueLines += fullRows.length;
+    }
+    _addCavityCharges(player, fullRows.length);
+
+    combo++;
+    bestCombo = max(bestCombo, combo);
+    final comboBonus = combo > 1 ? (combo - 1) * 50 * level : 0;
+
+    final hardClear = fullRows.length >= 4 || fusionCount >= 2;
+    var backToBackBonus = 0;
+    if (hardClear) {
+      if (backToBack > 0) backToBackBonus = (linePoints * 0.5).round();
+      backToBack++;
+    } else {
+      backToBack = 0;
+    }
+
+    score += linePoints + comboBonus + backToBackBonus;
+    return _CoopClearAward(
+      linePoints: linePoints,
+      comboBonus: comboBonus,
+      backToBackBonus: backToBackBonus,
+    );
   }
 
   int _lineClearScore(int count) => switch (count) {
@@ -399,6 +657,12 @@ class CoopGameEngine {
     3 => 500,
     _ => 800,
   };
+
+  void _recordEffect(CoopEffectState effect) {
+    _effect = effect;
+    _recentEffects.add(effect);
+    if (_recentEffects.length > 4) _recentEffects.removeAt(0);
+  }
 
   void _shiftBothAfterClear(List<int> clearedRows) {
     final red = _redPiece;
@@ -442,7 +706,7 @@ class CoopGameEngine {
       type: type,
       row: 0,
       col: (config.cols - width) ~/ 2,
-      mirrored: player.mirrored,
+      mirrored: player == CoopPlayer.red ? _redMirrored : _blueMirrored,
     );
     _setActive(player, piece);
     if (!_canPlace(player, piece)) gameOver = true;
@@ -461,8 +725,12 @@ class CoopGameEngine {
     for (final row in board.cells) {
       for (final cell in row) {
         var mask = 0;
-        if (cell.bl != null) mask |= 1;
-        if (cell.tr != null) mask |= 2;
+        if (cell.bl != null) {
+          mask |= cell.bl == duoTrColor ? 8 : 1;
+        }
+        if (cell.tr != null) {
+          mask |= cell.tr == duoBlColor ? 16 : 2;
+        }
         if (cell.full != null) mask |= 4;
         cells.add(mask);
       }
@@ -472,6 +740,7 @@ class CoopGameEngine {
       rows: config.rows,
       cols: config.cols,
       cells: cells,
+      variant: variant,
       redPiece: _redPiece == null
           ? null
           : CoopActivePieceState.fromPiece(_redPiece!),
@@ -480,11 +749,32 @@ class CoopGameEngine {
           : CoopActivePieceState.fromPiece(_bluePiece!),
       score: score,
       lines: lines,
+      locks: locks,
+      fusions: fusions,
+      combo: combo,
+      bestCombo: bestCombo,
+      backToBack: backToBack,
+      redLines: redLines,
+      blueLines: blueLines,
+      effect: _effect,
+      effects: List<CoopEffectState>.unmodifiable(_recentEffects),
       redCavityCharges: _redCavityCharges,
       blueCavityCharges: _blueCavityCharges,
       gameOver: gameOver,
     );
   }
+}
+
+class _CoopClearAward {
+  const _CoopClearAward({
+    this.linePoints = 0,
+    this.comboBonus = 0,
+    this.backToBackBonus = 0,
+  });
+
+  final int linePoints;
+  final int comboBonus;
+  final int backToBackBonus;
 }
 
 bool _piecesConflict(ActivePiece first, ActivePiece second) {

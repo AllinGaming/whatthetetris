@@ -95,32 +95,49 @@ class AnalyticsService {
   Future<void> dailyRetry({required bool previouslyCleared}) =>
       _log('daily_retry', {'previously_cleared': previouslyCleared});
 
-  Future<void> multiplayerLobbyViewed({required bool available}) =>
-      _log('multiplayer_lobby_viewed', {'available': available});
+  Future<void> multiplayerLobbyViewed({
+    required bool available,
+    String variant = 'fixed',
+  }) => _log('multiplayer_lobby_viewed', {
+    'available': available,
+    'variant': variant,
+  });
 
   Future<void> multiplayerLobbyAction({
     required String action,
     required String result,
-  }) => _log('multiplayer_lobby_action', {'action': action, 'result': result});
+    String variant = 'fixed',
+  }) => _log('multiplayer_lobby_action', {
+    'action': action,
+    'result': result,
+    'variant': variant,
+  });
 
   Future<void> multiplayerConnection({
     required String result,
     required String role,
     required int waitMs,
+    String variant = 'fixed',
   }) => _log('multiplayer_connection', {
     'result': result,
     'role': role,
     'wait_ms': waitMs,
+    'variant': variant,
   });
 
   Future<void> multiplayerRoundStarted({
     required String role,
     required int roundNumber,
+    String variant = 'fixed',
   }) async {
-    await _setProperty('last_mode', 'multiplayer');
+    await _setProperty(
+      'last_mode',
+      variant == 'mirror' ? 'multiplayer_mirror' : 'multiplayer',
+    );
     await _log('multiplayer_round_started', {
       'role': role,
       'round_number': roundNumber,
+      'variant': variant,
     });
   }
 
@@ -135,6 +152,7 @@ class AnalyticsService {
     required int rotations,
     required int softDrops,
     required int hardDrops,
+    String variant = 'fixed',
   }) => _log('multiplayer_round_ended', {
     'role': role,
     'reason': reason,
@@ -146,14 +164,17 @@ class AnalyticsService {
     'rotations': rotations,
     'soft_drops': softDrops,
     'hard_drops': hardDrops,
+    'variant': variant,
   });
 
   Future<void> multiplayerRestarted({
     required String role,
     required int completedRounds,
+    String variant = 'fixed',
   }) => _log('multiplayer_restarted', {
     'role': role,
     'completed_rounds': completedRounds,
+    'variant': variant,
   });
 
   Future<void> lineClear(int count) => _log('line_clear', {'count': count});

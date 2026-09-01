@@ -2,29 +2,35 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../game/coop_game_screen.dart';
+import '../models/coop_variant.dart';
 import '../services/audio_service.dart';
 import '../services/high_score_service.dart';
 import '../services/live_services.dart';
 import '../services/multiplayer_session_service.dart';
+import '../services/settings_service.dart';
 import '../services/theme_service.dart';
 import 'account_screen.dart';
 import 'widgets/menu_backdrop.dart';
+import 'widgets/share_dialog.dart';
 
 class MultiplayerLobbyScreen extends StatefulWidget {
   const MultiplayerLobbyScreen({
     super.key,
+    this.variant = CoopVariant.fixed,
     required this.live,
     required this.theme,
     required this.audio,
+    required this.settings,
     required this.highScores,
   });
 
+  final CoopVariant variant;
   final LiveServices live;
   final ThemeService theme;
   final AudioService audio;
+  final SettingsService settings;
   final HighScoreService highScores;
 
   @override
@@ -38,6 +44,9 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
   bool _connectionResultLogged = false;
   DateTime? _connectionAttemptStartedAt;
   MultiplayerConnectionStatus _lastStatus = MultiplayerConnectionStatus.idle;
+
+  CoopVariant get _activeVariant =>
+      _session.roomCode == null ? widget.variant : _session.variant;
 
   bool get _busy => switch (_session.status) {
     MultiplayerConnectionStatus.creatingRoom ||
@@ -62,6 +71,7 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
     unawaited(
       widget.live.analytics.multiplayerLobbyViewed(
         available: _session.available,
+        variant: widget.variant.analyticsName,
       ),
     );
   }
@@ -87,6 +97,7 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
             result: 'success',
             role: _session.player?.name ?? 'unknown',
             waitMs: _connectionWaitMs,
+            variant: _session.variant.analyticsName,
           ),
         );
       } else if (status == MultiplayerConnectionStatus.failed &&
@@ -97,6 +108,7 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
             result: 'failed',
             role: _session.player?.name ?? 'unknown',
             waitMs: _connectionWaitMs,
+            variant: _activeVariant.analyticsName,
           ),
         );
       }
@@ -116,6 +128,7 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
               theme: widget.theme,
               analytics: widget.live.analytics,
               audio: widget.audio,
+              settings: widget.settings,
               highScores: widget.highScores,
               leaderboard: widget.live.leaderboard,
             ),
@@ -129,6 +142,7 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
   }
 
   Future<void> _createRoom() async {
+    unawaited(widget.audio.play(Sfx.menuTap));
     FocusScope.of(context).unfocus();
     _connectionAttemptStartedAt = DateTime.now();
     _connectionResultLogged = false;
@@ -136,14 +150,16 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
       widget.live.analytics.multiplayerLobbyAction(
         action: 'create_room',
         result: 'attempted',
+        variant: widget.variant.analyticsName,
       ),
     );
     try {
-      await _session.createRoom();
+      await _session.createRoom(variant: widget.variant);
       unawaited(
         widget.live.analytics.multiplayerLobbyAction(
           action: 'create_room',
           result: 'created',
+          variant: _session.variant.analyticsName,
         ),
       );
     } catch (_) {
@@ -151,12 +167,14 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
         widget.live.analytics.multiplayerLobbyAction(
           action: 'create_room',
           result: 'failed',
+          variant: widget.variant.analyticsName,
         ),
       );
     }
   }
 
   Future<void> _joinRoom() async {
+    unawaited(widget.audio.play(Sfx.menuTap));
     FocusScope.of(context).unfocus();
     _connectionAttemptStartedAt = DateTime.now();
     _connectionResultLogged = false;
@@ -164,6 +182,7 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
       widget.live.analytics.multiplayerLobbyAction(
         action: 'join_room',
         result: 'attempted',
+        variant: widget.variant.analyticsName,
       ),
     );
     try {
@@ -172,6 +191,7 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
         widget.live.analytics.multiplayerLobbyAction(
           action: 'join_room',
           result: 'claimed',
+          variant: _session.variant.analyticsName,
         ),
       );
     } catch (_) {
@@ -179,6 +199,7 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
         widget.live.analytics.multiplayerLobbyAction(
           action: 'join_room',
           result: 'failed',
+          variant: _activeVariant.analyticsName,
         ),
       );
     }
@@ -187,11 +208,13 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
   Future<void> _copyCode() async {
     final code = _session.roomCode;
     if (code == null) return;
+    unawaited(widget.audio.play(Sfx.menuTap));
     await Clipboard.setData(ClipboardData(text: code));
     unawaited(
       widget.live.analytics.multiplayerLobbyAction(
         action: 'share_code',
         result: 'copied',
+        variant: _session.variant.analyticsName,
       ),
     );
     if (!mounted) return;
@@ -203,22 +226,29 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
   Future<void> _shareCode() async {
     final code = _session.roomCode;
     if (code == null) return;
-    try {
-      await Share.share('Join my What The Triangle 2 Player room: $code');
+    unawaited(widget.audio.play(Sfx.menuTap));
+    final message =
+        'Join my What The Triangle ${_session.variant.title} room: $code';
+    final result = await showTriangleShareDialog(
+      context,
+      title: 'Share room $code',
+      message: message,
+      copyLabel: 'Copy invite',
+      copyText: '$message\n$triangleGameUrl',
+    );
+    if (result != null) {
       unawaited(
         widget.live.analytics.multiplayerLobbyAction(
           action: 'share_code',
-          result: 'share_sheet',
+          result: result.name,
+          variant: _session.variant.analyticsName,
         ),
       );
-    } catch (_) {
-      // Some desktop browsers do not expose a system share sheet. Copying is
-      // a predictable fallback and still works with any external app.
-      await _copyCode();
     }
   }
 
   Future<void> _openAccount() async {
+    unawaited(widget.audio.play(Sfx.menuTap));
     unawaited(widget.live.analytics.featureSelected('account_suggestion'));
     await Navigator.of(
       context,
@@ -231,7 +261,7 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
     final accent = Theme.of(context).colorScheme.primary;
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(title: const Text('2 Player')),
+      appBar: AppBar(title: Text(_activeVariant.title)),
       body: Stack(
         children: [
           MenuBackdrop(theme: widget.theme.current, reduceMotion: true),
@@ -253,10 +283,10 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
                             ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
-                        'The host is red, the guest is blue. Both players get '
-                        'their own pieces on the same board, and neither player '
-                        'can mirror them. Each starts with one cavity fill.',
+                      Text(
+                        _activeVariant.allowsMirror
+                            ? 'The host is red and the guest is blue. Both players can mirror their own falling pieces while keeping their color. Each starts with one cavity fill.'
+                            : 'The host is red, the guest is blue. Both players get their own pieces on the same board, and neither player can mirror them. Each starts with one cavity fill.',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: Colors.white70),
                       ),
