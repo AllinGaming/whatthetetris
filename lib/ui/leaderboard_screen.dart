@@ -6,7 +6,13 @@ import '../services/daily_challenge_service.dart';
 import '../services/leaderboard_service.dart';
 import 'widgets/neon_text.dart';
 
-enum _LeaderboardBoard { classic, daily, multiplayer, multiplayerMirror }
+enum _LeaderboardBoard {
+  classic,
+  daily,
+  multiplayer,
+  multiplayerMirror,
+  multiplayerPuzzle,
+}
 
 /// Per-mode leaderboards (docs/GDD.md SS6.6), backed by [LeaderboardService].
 /// Only a new local best is submitted, and Firestore rules limit direct writes
@@ -55,6 +61,11 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           forceRefresh: forceRefresh,
           variant: CoopVariant.mirror,
         ),
+      _LeaderboardBoard.multiplayerPuzzle =>
+        widget.leaderboard.fetchTopMultiplayer(
+          forceRefresh: forceRefresh,
+          variant: CoopVariant.puzzle,
+        ),
     };
   }
 
@@ -63,6 +74,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     _LeaderboardBoard.daily => 'Daily Challenge',
     _LeaderboardBoard.multiplayer => '2 Player',
     _LeaderboardBoard.multiplayerMirror => '2 Player Mirror',
+    _LeaderboardBoard.multiplayerPuzzle => '2 Player Puzzle',
   };
 
   @override
@@ -165,14 +177,15 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                                       ),
                                     ),
                                     subtitle: Text(
-                                      _selected ==
-                                              _LeaderboardBoard
-                                                  .multiplayerMirror
-                                          ? 'Mirror shared-board best'
-                                          : _selected ==
-                                                _LeaderboardBoard.multiplayer
-                                          ? 'Shared-board team best'
-                                          : 'Level ${entry.level}',
+                                      switch (_selected) {
+                                        _LeaderboardBoard.multiplayerMirror =>
+                                          'Mirror shared-board best',
+                                        _LeaderboardBoard.multiplayerPuzzle =>
+                                          'Co-op puzzle best',
+                                        _LeaderboardBoard.multiplayer =>
+                                          'Shared-board team best',
+                                        _ => 'Level ${entry.level}',
+                                      },
                                       style: const TextStyle(
                                         color: Colors.white54,
                                       ),

@@ -184,7 +184,10 @@ void main() {
     expect(find.byKey(const ValueKey('daily-mode-icon')), findsOneWidget);
     expect(find.text('2 Player'), findsOneWidget);
     expect(find.text('2 Player Mirror'), findsOneWidget);
-    expect(find.text('Best team score: 0'), findsNWidgets(2));
+    expect(find.text('2 Player Puzzle'), findsOneWidget);
+    expect(find.text('Best team score: 0'), findsNWidgets(3));
+    expect(find.byType(Slider), findsOneWidget);
+    expect(find.text('25%'), findsOneWidget);
     expect(find.text('Chill'), findsNothing);
     expect(find.text('Legacy Classic'), findsNothing);
     expect(find.text('Arcade'), findsNothing);
@@ -212,6 +215,21 @@ void main() {
     );
     expect(lobby.variant, CoopVariant.mirror);
     expect(find.textContaining('Both players can mirror'), findsOneWidget);
+  });
+
+  testWidgets('2 Player Puzzle opens the shared formation lobby', (
+    WidgetTester tester,
+  ) async {
+    await _pumpApp(tester);
+
+    await _tapMode(tester, '2 Player Puzzle');
+
+    final lobby = tester.widget<MultiplayerLobbyScreen>(
+      find.byType(MultiplayerLobbyScreen),
+    );
+    expect(lobby.variant, CoopVariant.puzzle);
+    expect(find.textContaining('2–7-row formation'), findsOneWidget);
+    expect(find.textContaining('one occupied row'), findsOneWidget);
   });
 
   testWidgets('account and leaderboards are reachable from mode select', (

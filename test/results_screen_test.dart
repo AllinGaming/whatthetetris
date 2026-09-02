@@ -153,6 +153,8 @@ void main() {
           level: 1,
           lines: 1,
           isNewBest: false,
+          challengeCleared: true,
+          speedBonus: 4990,
           durationMs: 1000,
           fusions: 0,
           fourLineClears: 0,
@@ -168,6 +170,8 @@ void main() {
 
     await tester.tap(find.text('Play Again'));
     await tester.tap(find.text('Share'));
+    expect(find.text('Speed bonus'), findsOneWidget);
+    expect(find.text('+4990'), findsOneWidget);
     expect(playedAgain, isTrue);
     expect(shared, isTrue);
   });

@@ -129,7 +129,7 @@ class LeaderboardService {
   /// Refreshes the player's name on only the leaderboard documents that
   /// already exist. A name choice therefore costs zero score-document writes
   /// for a player with no entries, and at most one write for each currently
-  /// visible board (Classic, both 2 Player variants, and today's Daily).
+  /// visible board (Classic, all 2 Player variants, and today's Daily).
   Future<bool> syncCurrentPlayerName({int? dailySeed}) async {
     final uid = _auth.uid;
     if (!available || uid == null) return false;
@@ -137,6 +137,7 @@ class LeaderboardService {
       _entries(mode: GameMode.chill, isDaily: false).doc(uid),
       _multiplayerEntries(CoopVariant.fixed).doc(uid),
       _multiplayerEntries(CoopVariant.mirror).doc(uid),
+      _multiplayerEntries(CoopVariant.puzzle).doc(uid),
       if (dailySeed != null)
         _entries(
           mode: GameMode.daily,

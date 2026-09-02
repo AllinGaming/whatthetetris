@@ -114,6 +114,7 @@ void main() {
       lines: 5,
       durationMs: 1000,
       isNewBest: true,
+      speedBonus: 4990,
     );
     await analytics.mirrorUsed();
     await analytics.cavityFillUsed();
@@ -142,6 +143,7 @@ void main() {
       rotations: 12,
       softDrops: 8,
       hardDrops: 14,
+      speedBonus: 4700,
     );
     await analytics.multiplayerRestarted(role: 'host', completedRounds: 1);
     // If any of the above throws, this test fails — that's the contract.

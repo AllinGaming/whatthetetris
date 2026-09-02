@@ -117,32 +117,6 @@ class CoopBoardPainter extends CustomPainter {
     _paintPiece(canvas, redPiece, duoBlColor, cellSize, startY);
     _paintPiece(canvas, bluePiece, duoTrColor, cellSize, startY);
 
-    final particlePaint = Paint();
-    for (final particle in anim.activeParticles) {
-      canvas.drawCircle(
-        Offset(
-          particle.position.dx * cellSize,
-          startY + particle.position.dy * cellSize,
-        ),
-        cellSize * 0.09,
-        particlePaint
-          ..color = particle.color.withValues(alpha: particle.opacity),
-      );
-    }
-
-    final ringOrigin = anim.impactRingOrigin;
-    if (ringOrigin != null && anim.impactRing.isAnimating) {
-      final t = anim.impactRing.value;
-      canvas.drawCircle(
-        Offset(ringOrigin.dx * cellSize, startY + ringOrigin.dy * cellSize),
-        cellSize * (0.3 + t * 1.6),
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 3 * (1 - t)
-          ..color = Colors.white.withValues(alpha: (1 - t) * 0.65),
-      );
-    }
-
     if (anim.danger.value > 0) {
       final pulse = anim.danger.value;
       canvas.drawRect(
@@ -202,6 +176,77 @@ class CoopBoardPainter extends CustomPainter {
                 config.rows * cellSize,
               ),
             ),
+    );
+
+    // Impact effects are deliberately last. This keeps red/blue ownership and
+    // hard-drop feedback legible over active pieces, line flashes, danger
+    // pulses, and celebration washes on both peers.
+    _paintParticlesAndImpact(canvas, size, cellSize, startY);
+  }
+
+  void _paintParticlesAndImpact(
+    Canvas canvas,
+    Size size,
+    double cellSize,
+    double startY,
+  ) {
+    final haloPaint = Paint()..blendMode = BlendMode.plus;
+    final corePaint = Paint()..blendMode = BlendMode.plus;
+    final sparkPaint = Paint()..blendMode = BlendMode.plus;
+    for (final particle in anim.activeParticles) {
+      final center = Offset(
+        particle.position.dx * cellSize,
+        startY + particle.position.dy * cellSize,
+      );
+      if (center.dx < -cellSize ||
+          center.dx > size.width + cellSize ||
+          center.dy < -cellSize ||
+          center.dy > size.height + cellSize) {
+        continue;
+      }
+      final opacity = particle.opacity;
+      final radius = cellSize * (0.085 + opacity * 0.025);
+      canvas.drawCircle(
+        center,
+        radius * 2.35,
+        haloPaint..color = particle.color.withValues(alpha: opacity * 0.20),
+      );
+      canvas.drawCircle(
+        center,
+        radius,
+        corePaint..color = particle.color.withValues(alpha: opacity * 0.92),
+      );
+      canvas.drawCircle(
+        center,
+        radius * 0.36,
+        sparkPaint..color = Colors.white.withValues(alpha: opacity * 0.86),
+      );
+    }
+
+    final ringOrigin = anim.impactRingOrigin;
+    if (ringOrigin == null || !anim.impactRing.isAnimating) return;
+    final t = anim.impactRing.value;
+    final center = Offset(
+      ringOrigin.dx * cellSize,
+      startY + ringOrigin.dy * cellSize,
+    );
+    final fade = 1 - t;
+    canvas.drawCircle(
+      center,
+      cellSize * (0.32 + t * 1.75),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4 * fade + 0.6
+        ..color = anim.impactRingColor.withValues(alpha: fade * 0.80)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+    canvas.drawCircle(
+      center,
+      cellSize * (0.22 + t * 1.25),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..color = Colors.white.withValues(alpha: fade * 0.72),
     );
   }
 

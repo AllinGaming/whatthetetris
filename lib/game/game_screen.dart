@@ -30,6 +30,7 @@ import 'board_painter.dart';
 import 'game_animations.dart';
 import 'game_board.dart';
 import 'piece_bag.dart';
+import 'puzzle_speed_bonus.dart';
 import 'replay.dart';
 import 'tutorial_level_screen.dart';
 
@@ -130,6 +131,7 @@ class _GameScreenState extends State<GameScreen>
   /// Daily Challenge win from the ordinary top-out loss that [_endGame]
   /// otherwise represents, for the results screen and [DailyChallengeService].
   bool _challengeCleared = false;
+  int _completionSpeedBonus = 0;
 
   /// True from the moment a run ends until [_finishGame]'s persistence/
   /// analytics work (and any pre-dialog beat) completes — guards against
@@ -164,10 +166,13 @@ class _GameScreenState extends State<GameScreen>
       _speedBoost < _maxSpeedBoost &&
       cfg.speedCurve(_level, _speedBoost + 1) < _tickSpeed;
 
-  /// A countdown/elapsed readout for Sprint's line target and Ultra's time
-  /// limit — null for every other mode, so the HUD only shows it when it's
-  /// meaningful (docs/GDD.md SS5).
+  /// A countdown/elapsed readout for timed modes plus Daily's live projected
+  /// completion bonus — null where a clock has no gameplay meaning.
   String? get _clockDisplay {
+    if (cfg.endCondition == EndCondition.boardReducedToOneRow) {
+      final projected = PuzzleSpeedBonus.forElapsed(_stopwatch.elapsed);
+      return '${_formatDuration(_stopwatch.elapsed)} · Speed +$projected';
+    }
     if (cfg.timeLimit != null) {
       final remaining = cfg.timeLimit! - _stopwatch.elapsed;
       return _formatDuration(remaining.isNegative ? Duration.zero : remaining);
@@ -305,6 +310,7 @@ class _GameScreenState extends State<GameScreen>
     _state = GameState.playing;
     _resolvingLock = false;
     _challengeCleared = false;
+    _completionSpeedBonus = 0;
     _toasts.clear();
     _combo = -1;
     _backToBack = 0;
@@ -379,7 +385,9 @@ class _GameScreenState extends State<GameScreen>
     _stopwatch
       ..reset()
       ..start();
-    if (cfg.timeLimit != null || cfg.lineTarget != null) {
+    if (cfg.timeLimit != null ||
+        cfg.lineTarget != null ||
+        cfg.endCondition == EndCondition.boardReducedToOneRow) {
       _clockTimer = Timer.periodic(
         const Duration(milliseconds: 200),
         (_) => _onClockTick(),
@@ -405,9 +413,16 @@ class _GameScreenState extends State<GameScreen>
         _countdownTimer?.cancel();
         _countdownTimer = null;
         _showingCountdown = false;
-        _beginRun();
+        if (!_stopwatch.isRunning && _state == GameState.playing) _beginRun();
       } else {
         _countdownValue--;
+        // Daily accepts input as soon as GO appears, so its active-play clock
+        // must start on that same frame rather than granting a free second.
+        if (_countdownValue == 0 &&
+            cfg.endCondition == EndCondition.boardReducedToOneRow &&
+            _state == GameState.playing) {
+          _beginRun();
+        }
       }
       setState(() {});
     });
@@ -505,8 +520,7 @@ class _GameScreenState extends State<GameScreen>
     }
     if (cfg.endCondition == EndCondition.boardReducedToOneRow &&
         _board.hasAtMostOneOccupiedRow) {
-      _challengeCleared = true;
-      _endGame();
+      _completeChallenge();
       setState(() {});
       return;
     }
@@ -815,6 +829,7 @@ class _GameScreenState extends State<GameScreen>
           lines: _lines,
           durationMs: _stopwatch.elapsedMilliseconds,
           isNewBest: isNewBest,
+          speedBonus: _completionSpeedBonus,
         ),
       );
       unawaited(
@@ -865,6 +880,7 @@ class _GameScreenState extends State<GameScreen>
         lines: _lines,
         isNewBest: isNewBest,
         challengeCleared: _challengeCleared,
+        speedBonus: _completionSpeedBonus,
         durationMs: _stopwatch.elapsedMilliseconds,
         fusions: _runFusions,
         fourLineClears: _runFourLineClears,
@@ -1347,8 +1363,7 @@ class _GameScreenState extends State<GameScreen>
     // also counts when one move clears the final two rows together.
     if (cfg.endCondition == EndCondition.boardReducedToOneRow &&
         _board.hasAtMostOneOccupiedRow) {
-      _challengeCleared = true;
-      _endGame();
+      _completeChallenge();
       setState(() {});
       return;
     }
@@ -1364,6 +1379,21 @@ class _GameScreenState extends State<GameScreen>
       3 => Sfx.clear3,
       _ => Sfx.clearFourLine,
     });
+  }
+
+  void _completeChallenge() {
+    if (_challengeCleared) return;
+    _challengeCleared = true;
+    _completionSpeedBonus = PuzzleSpeedBonus.forElapsed(_stopwatch.elapsed);
+    _score += _completionSpeedBonus;
+    if (_completionSpeedBonus > 0) {
+      _showToast(
+        'SPEED BONUS +$_completionSpeedBonus',
+        Colors.greenAccent,
+        big: true,
+      );
+    }
+    _endGame();
   }
 
   List<int> _detectFullRows() => _board.detectFullRows();

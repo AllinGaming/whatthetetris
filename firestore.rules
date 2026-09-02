@@ -79,16 +79,16 @@ service cloud.firestore {
     }
 
     // Lightweight client-written leaderboards: a Firebase player may create
-    // only their own tiny entry, including either 2 Player variant. Scores
+    // only their own tiny entry, including any 2 Player variant. Scores
     // must increase; a player may
     // also change only the public name attached to an unchanged score.
     // This minimizes writes, but cannot make a modified client cheat-proof.
     match /leaderboards/{mode}/entries/{uid} {
       allow read: if request.auth != null;
-      allow create: if mode in ['chill', 'multiplayer', 'multiplayerMirror']
+      allow create: if mode in ['chill', 'multiplayer', 'multiplayerMirror', 'multiplayerPuzzle']
         && owns(uid)
         && validLeaderboardEntry();
-      allow update: if mode in ['chill', 'multiplayer', 'multiplayerMirror']
+      allow update: if mode in ['chill', 'multiplayer', 'multiplayerMirror', 'multiplayerPuzzle']
         && validLeaderboardUpdate(uid);
     }
 
@@ -125,7 +125,7 @@ service cloud.firestore {
         && request.resource.data.hostUid == request.auth.uid
         && !('guestUid' in request.resource.data)
         && (!('variant' in request.resource.data)
-          || request.resource.data.variant in ['fixed', 'mirror']);
+          || request.resource.data.variant in ['fixed', 'mirror', 'puzzle']);
       allow update: if signedIn()
         && request.resource.data.hostUid == resource.data.hostUid
         && (

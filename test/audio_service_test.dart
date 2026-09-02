@@ -24,6 +24,7 @@ void main() {
   );
 
   test('music is quieter than effects by default', () {
+    expect(AudioService.defaultMusicVolume, 0.25);
     expect(
       AudioService.defaultMusicVolume,
       lessThan(AudioService.defaultSfxVolume),

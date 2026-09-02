@@ -61,6 +61,7 @@ class GameAnimations {
   /// same space as [piecePos].
   final AnimationController impactRing;
   Offset? impactRingOrigin;
+  Color impactRingColor = Colors.white;
 
   /// A soft pulsing glow around the board while a combo streak is alive —
   /// the combo equivalent of [danger]'s border pulse, so a chain reads as an
@@ -93,6 +94,7 @@ class GameAnimations {
   bool reduceMotion = false;
 
   final List<Particle> _particles = [];
+  static const _maxActiveParticles = 240;
   final _rand = Random();
   DateTime? _lastParticleTick;
 
@@ -149,9 +151,10 @@ class GameAnimations {
 
   /// Triggers the hard-drop impact ring at [originGridPos] (grid units,
   /// same space as [piecePos]), unless reduced motion is on.
-  void triggerImpactRing(Offset originGridPos) {
+  void triggerImpactRing(Offset originGridPos, {Color color = Colors.white}) {
     if (reduceMotion) return;
     impactRingOrigin = originGridPos;
+    impactRingColor = color;
     impactRing.forward(from: 0);
   }
 
@@ -215,6 +218,7 @@ class GameAnimations {
     impactRing.stop();
     impactRing.value = 0;
     impactRingOrigin = null;
+    impactRingColor = Colors.white;
     lockFlash.stop();
     lockFlash.value = 0;
     lineClear.stop();
@@ -226,8 +230,21 @@ class GameAnimations {
   /// Spawns a small burst of particles at [originGridPos] (grid units, same
   /// space as [piecePos]) in [color], and keeps the shared physics ticker
   /// running only while particles are actually alive.
-  void burst(Offset originGridPos, Color color, {int count = 12}) {
+  void burst(
+    Offset originGridPos,
+    Color color, {
+    int count = 12,
+    double lifeScale = 1,
+    double fadeFraction = 1,
+  }) {
     if (reduceMotion) count = (count / 3).ceil().clamp(1, count);
+    count = count.clamp(0, _maxActiveParticles);
+    final overflow = _particles.length + count - _maxActiveParticles;
+    if (overflow > 0) {
+      // Keep the newest impacts visible and place a hard ceiling on painter
+      // work during simultaneous multiplayer locks and multi-line clears.
+      _particles.removeRange(0, overflow.clamp(0, _particles.length));
+    }
     for (int i = 0; i < count; i++) {
       final angle = _rand.nextDouble() * pi * 2;
       final speed = 2 + _rand.nextDouble() * 3;
@@ -236,7 +253,8 @@ class GameAnimations {
           position: originGridPos,
           velocity: Offset(cos(angle), sin(angle) * 0.6 - 1.4) * speed,
           color: color,
-          life: 0.45 + _rand.nextDouble() * 0.35,
+          life: (0.45 + _rand.nextDouble() * 0.35) * lifeScale.clamp(0.5, 3),
+          fadeFraction: fadeFraction,
         ),
       );
     }

@@ -125,7 +125,7 @@ void main() {
     });
 
     test('snapshot round-trips the shared board and both falling pieces', () {
-      final engine = CoopGameEngine(seed: 19);
+      final engine = CoopGameEngine(seed: 19, roundId: 4);
       engine.board.cells[19][0].bl = duoBlColor;
       engine.board.cells[19][0].tr = duoTrColor;
       engine.board.cells[18][1].full = duoFullColor;
@@ -135,6 +135,7 @@ void main() {
       final board = restored.buildBoard();
 
       expect(restored.cells, original.cells);
+      expect(restored.roundId, 4);
       expect(restored.variant, CoopVariant.fixed);
       expect(restored.locks, original.locks);
       expect(restored.fusions, original.fusions);
@@ -155,6 +156,79 @@ void main() {
       expect(board[19][0].bl, duoBlColor);
       expect(board[19][0].tr, duoTrColor);
       expect(board[18][1].full, duoFullColor);
+    });
+
+    test(
+      'a new round outranks the previous round even at a lower revision',
+      () {
+        final previous = CoopGameEngine(seed: 20, roundId: 1);
+        for (var i = 0; i < 5; i++) {
+          previous.applyAction(CoopPlayer.red, CoopAction.left);
+        }
+        final next = CoopGameEngine(seed: 21, roundId: 2);
+
+        expect(
+          next.snapshot().revision,
+          lessThan(previous.snapshot().revision),
+        );
+        expect(next.snapshot().isAtLeastAsNewAs(previous.snapshot()), isTrue);
+        expect(previous.snapshot().isAtLeastAsNewAs(next.snapshot()), isFalse);
+      },
+    );
+
+    test('puzzle variant starts seeded and wins at one occupied row', () {
+      final first = CoopGameEngine(seed: 45, variant: CoopVariant.puzzle);
+      final matching = CoopGameEngine(seed: 45, variant: CoopVariant.puzzle);
+
+      expect(first.snapshot().cells, matching.snapshot().cells);
+      expect(first.snapshot().rows, CoopGameEngine.puzzleConfig.rows);
+      expect(first.snapshot().occupiedRowCount, inInclusiveRange(2, 7));
+      expect(first.cavityChargesFor(CoopPlayer.red), 2);
+      expect(first.cavityChargesFor(CoopPlayer.blue), 2);
+      while (first.applyAction(CoopPlayer.red, CoopAction.left)) {}
+      while (first.applyAction(CoopPlayer.blue, CoopAction.right)) {}
+      expect(first.applyAction(CoopPlayer.red, CoopAction.mirror), isTrue);
+
+      for (var row = 0; row < first.board.config.rows; row++) {
+        first.board.cells[row] = List.generate(
+          first.board.config.cols,
+          (_) => CellOccupancy(),
+        );
+      }
+      first.board.cells.last[0].full = duoFullColor;
+      final clearRow = first.board.cells.length - 2;
+      first.board.cells[clearRow][0].bl = duoBlColor;
+      for (var col = 1; col < first.board.config.cols; col++) {
+        first.board.cells[clearRow][col].full = duoFullColor;
+      }
+
+      expect(first.applyAction(CoopPlayer.blue, CoopAction.fillCavity), isTrue);
+      expect(first.puzzleCleared, isTrue);
+      expect(first.gameOver, isFalse);
+      expect(first.roundOver, isTrue);
+      expect(first.snapshot().puzzleCleared, isTrue);
+      expect(first.snapshot().puzzleRowsRemaining, 0);
+      expect(first.activeFor(CoopPlayer.red), isNull);
+      expect(first.activeFor(CoopPlayer.blue), isNull);
+
+      final scoreBeforeBonus = first.score;
+      first.awardPuzzleSpeedBonus(const Duration(minutes: 1));
+      expect(first.puzzleSpeedBonusAwarded, isTrue);
+      expect(first.puzzleSpeedBonus, 4400);
+      expect(first.score, scoreBeforeBonus + 4400);
+
+      final awardedScore = first.score;
+      final awardedRevision = first.revision;
+      first.awardPuzzleSpeedBonus(Duration.zero);
+      expect(first.score, awardedScore);
+      expect(first.revision, awardedRevision);
+
+      final restored = CoopGameSnapshot.fromJson(first.snapshot().toJson());
+      expect(restored.variant, CoopVariant.puzzle);
+      expect(restored.puzzleCleared, isTrue);
+      expect(restored.puzzleSpeedBonus, 4400);
+      expect(restored.score, first.score);
+      expect(restored.roundOver, isTrue);
     });
 
     test('confirmed locks are carried in snapshots for shared audio cues', () {

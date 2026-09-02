@@ -36,6 +36,6 @@
 - [ ] Enable anonymous Auth, authorize `allingaming.github.io`, deploy `firestore.rules`, and run participant/attacker Firestore Emulator rule tests.
 - [ ] Configure Firestore TTL on `multiplayerRooms.expiresAt` and confirm abandoned room documents are deleted.
 - [ ] Provision a production TURN service with short-lived credentials; verify both relayed and direct connections rather than relying on public STUN alone.
-- [ ] Test both fixed and Mirror variants on two physical devices across same Wi-Fi, different Wi-Fi networks, and Wi-Fi-to-cellular, including mirrored red/blue color ownership, blocked Mirror inputs, backgrounding, disconnects, simultaneous inputs, top-out, restart, and leaving the lobby.
+- [ ] Test fixed, Mirror, and Puzzle variants on two physical devices across same Wi-Fi, different Wi-Fi networks, and Wi-Fi-to-cellular, including mirrored red/blue ownership, seeded Puzzle formation/victory, blocked Mirror inputs, backgrounding, disconnects, simultaneous inputs, top-out, host-only Play Again for Both, guest waiting state, synchronized rematch, and leaving the lobby.
 - [ ] Update and review the privacy policy, store disclosures, data retention, and account/data-deletion behavior before enabling Firebase in a distributed build.
-- [ ] Verify chosen names migrate on existing Classic, current Daily, fixed 2 Player, and 2 Player Mirror entries without changing or lowering their scores.
+- [ ] Verify chosen names migrate on existing Classic, current Daily, fixed 2 Player, 2 Player Mirror, and 2 Player Puzzle entries without changing or lowering their scores.

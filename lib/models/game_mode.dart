@@ -170,7 +170,8 @@ class GameModeConfig {
     label: 'Daily Challenge',
     description:
         'A new formation up to 7 rows high, shared by everyone today. Leave '
-        'only one occupied row to win, then replay to improve your score.',
+        'only one occupied row to win. Solve faster for up to 5,000 bonus '
+        'points, then replay to improve your score.',
     category: ModeCategory.daily,
     hasCavityFiller: true,
     hasManualSpeedBoost: false,

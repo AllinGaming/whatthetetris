@@ -78,7 +78,7 @@ enum MusicTrack {
 class AudioService extends ChangeNotifier {
   AudioService(this._prefs);
 
-  static const double defaultMusicVolume = 0.4;
+  static const double defaultMusicVolume = 0.25;
   static const double defaultSfxVolume = 0.9;
 
   static const _keyMuted = 'audio_muted';
@@ -148,6 +148,10 @@ class AudioService extends ChangeNotifier {
 
   Future<void> setMusicVolume(double value) async {
     await _prefs.setDouble(_keyMusicVolume, value);
+    // Repaint sliders as soon as persistence succeeds. Platform audio calls
+    // may complete later on web or be unavailable in tests, but neither
+    // should make the visible percentage lag behind the player's drag.
+    notifyListeners();
     if (!muted) {
       try {
         await _musicPlayer.setVolume(value);
@@ -155,7 +159,6 @@ class AudioService extends ChangeNotifier {
         // Same reasoning as playMusic -- never let audio break gameplay.
       }
     }
-    notifyListeners();
   }
 
   Future<void> setSfxVolume(double value) async {

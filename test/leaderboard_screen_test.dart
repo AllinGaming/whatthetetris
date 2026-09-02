@@ -43,7 +43,11 @@ class _FakeLeaderboardService extends LeaderboardService {
     LeaderboardEntry(
       uid: 'me',
       name: 'Triangle Ace',
-      score: variant.allowsMirror ? 5432 : 4321,
+      score: switch (variant) {
+        CoopVariant.fixed => 4321,
+        CoopVariant.mirror => 5432,
+        CoopVariant.puzzle => 6543,
+      },
       level: 3,
     ),
   ];
@@ -76,7 +80,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(ChoiceChip), findsNWidgets(4));
+    expect(find.byType(ChoiceChip), findsNWidgets(5));
     await tester.tap(find.widgetWithText(ChoiceChip, '2 Player'));
     await tester.pumpAndSettle();
 
@@ -88,5 +92,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('5432'), findsOneWidget);
     expect(find.text('Mirror shared-board best'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, '2 Player Puzzle'));
+    await tester.pumpAndSettle();
+    expect(find.text('6543'), findsOneWidget);
+    expect(find.text('Co-op puzzle best'), findsOneWidget);
   });
 }

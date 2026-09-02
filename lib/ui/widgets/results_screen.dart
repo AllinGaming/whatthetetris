@@ -17,6 +17,7 @@ class ResultsScreen extends StatelessWidget {
     required this.lines,
     required this.isNewBest,
     this.challengeCleared = false,
+    this.speedBonus = 0,
     required this.durationMs,
     required this.fusions,
     required this.fourLineClears,
@@ -39,6 +40,7 @@ class ResultsScreen extends StatelessWidget {
   /// the
   /// headline since it's the rarer, more specific signal.
   final bool challengeCleared;
+  final int speedBonus;
   final int durationMs;
   final int fusions;
   final int fourLineClears;
@@ -133,6 +135,8 @@ class ResultsScreen extends StatelessWidget {
                   _Stat(label: 'Level', value: '$level'),
                   _Stat(label: 'Lines', value: '$lines'),
                   _Stat(label: 'Time', value: _durationLabel),
+                  if (speedBonus > 0)
+                    _Stat(label: 'Speed bonus', value: '+$speedBonus'),
                   if (fourLineClears > 0)
                     _Stat(label: 'Four-line clears', value: '$fourLineClears'),
                   if (fusions > 0) _Stat(label: 'Fusions', value: '$fusions'),

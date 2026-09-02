@@ -56,5 +56,13 @@ void main() {
     );
     expect(service.bestMultiplayerScoreFor(CoopVariant.mirror), 1800);
     expect(service.bestMultiplayerScore, 1200);
+
+    expect(service.bestMultiplayerScoreFor(CoopVariant.puzzle), 0);
+    expect(
+      await service.submitMultiplayerScore(2200, variant: CoopVariant.puzzle),
+      isTrue,
+    );
+    expect(service.bestMultiplayerScoreFor(CoopVariant.puzzle), 2200);
+    expect(service.bestMultiplayerScoreFor(CoopVariant.mirror), 1800);
   });
 }

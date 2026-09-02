@@ -284,9 +284,14 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        _activeVariant.allowsMirror
-                            ? 'The host is red and the guest is blue. Both players can mirror their own falling pieces while keeping their color. Each starts with one cavity fill.'
-                            : 'The host is red, the guest is blue. Both players get their own pieces on the same board, and neither player can mirror them. Each starts with one cavity fill.',
+                        switch (_activeVariant) {
+                          CoopVariant.fixed =>
+                            'The host is red, the guest is blue. Both players get their own pieces on the same board, and neither player can mirror them. Each starts with one cavity fill.',
+                          CoopVariant.mirror =>
+                            'The host is red and the guest is blue. Both players can mirror their own falling pieces while keeping their color. Each starts with one cavity fill.',
+                          CoopVariant.puzzle =>
+                            'Work together on a shared 2–7-row formation. Mirror your own pieces and reduce the stack to one occupied row to win. Each player starts with two fills.',
+                        },
                         textAlign: TextAlign.center,
                         style: TextStyle(color: Colors.white70),
                       ),

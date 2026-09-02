@@ -128,7 +128,7 @@ class _AccountScreenState extends State<AccountScreen> {
     final saved =
         !changed || await widget.live.auth.updatePlayerName(desiredName);
     if (saved && (changed || syncIfUnchanged)) {
-      // This reads only the four visible boards and writes only existing
+      // This reads only the five visible boards and writes only existing
       // entries whose public name actually changed.
       await widget.live.leaderboard.syncCurrentPlayerName(
         dailySeed: DailyChallengeService.seedForToday(),

@@ -10,6 +10,7 @@ class HighScoreService extends ChangeNotifier {
 
   static const _multiplayerScoreKey = 'best_score_multiplayer';
   static const _multiplayerMirrorScoreKey = 'best_score_multiplayer_mirror';
+  static const _multiplayerPuzzleScoreKey = 'best_score_multiplayer_puzzle';
   final SharedPreferences _prefs;
 
   static Future<HighScoreService> create() async {
@@ -30,6 +31,7 @@ class HighScoreService extends ChangeNotifier {
   String _multiplayerKey(CoopVariant variant) => switch (variant) {
     CoopVariant.fixed => _multiplayerScoreKey,
     CoopVariant.mirror => _multiplayerMirrorScoreKey,
+    CoopVariant.puzzle => _multiplayerPuzzleScoreKey,
   };
 
   /// Fastest completion time in milliseconds, for time-attack modes like

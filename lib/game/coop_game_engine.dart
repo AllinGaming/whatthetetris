@@ -9,6 +9,7 @@ import '../models/piece.dart';
 import '../models/pieces.dart';
 import 'game_board.dart';
 import 'piece_bag.dart';
+import 'puzzle_speed_bonus.dart';
 
 enum CoopPlayer {
   red,
@@ -172,6 +173,7 @@ class CoopEffectState {
 /// snapshots remain backward compatible.
 class CoopGameSnapshot {
   const CoopGameSnapshot({
+    this.roundId = 0,
     required this.revision,
     required this.rows,
     required this.cols,
@@ -193,6 +195,8 @@ class CoopGameSnapshot {
     required this.redCavityCharges,
     required this.blueCavityCharges,
     required this.gameOver,
+    this.puzzleCleared = false,
+    this.puzzleSpeedBonus = 0,
   });
 
   factory CoopGameSnapshot.fromJson(Map<String, dynamic> json) {
@@ -227,6 +231,7 @@ class CoopGameSnapshot {
         : [if (legacyEffect != null) legacyEffect];
     final legacyCavityCharges = (json['cavityCharges'] as num?)?.toInt();
     return CoopGameSnapshot(
+      roundId: (json['roundId'] as num?)?.toInt() ?? 0,
       revision: (json['revision'] as num).toInt(),
       rows: rows,
       cols: cols,
@@ -251,9 +256,12 @@ class CoopGameSnapshot {
           0,
       blueCavityCharges: (json['blueCavityCharges'] as num?)?.toInt() ?? 0,
       gameOver: json['gameOver'] as bool,
+      puzzleCleared: json['puzzleCleared'] as bool? ?? false,
+      puzzleSpeedBonus: (json['puzzleSpeedBonus'] as num?)?.toInt() ?? 0,
     );
   }
 
+  final int roundId;
   final int revision;
   final int rows;
   final int cols;
@@ -275,6 +283,28 @@ class CoopGameSnapshot {
   final int redCavityCharges;
   final int blueCavityCharges;
   final bool gameOver;
+  final bool puzzleCleared;
+  final int puzzleSpeedBonus;
+
+  bool get roundOver => gameOver || puzzleCleared;
+
+  int get occupiedRowCount {
+    var count = 0;
+    for (var row = 0; row < rows; row++) {
+      final start = row * cols;
+      if (cells.skip(start).take(cols).any((cell) => cell != 0)) count++;
+    }
+    return count;
+  }
+
+  int get puzzleRowsRemaining => max(0, occupiedRowCount - 1);
+
+  /// A rematch starts a fresh engine whose revision counter resets. Compare
+  /// round generation first so peers accept that new snapshot while still
+  /// rejecting genuinely stale updates from an earlier round.
+  bool isAtLeastAsNewAs(CoopGameSnapshot other) =>
+      roundId > other.roundId ||
+      (roundId == other.roundId && revision >= other.revision);
 
   Config get config => Config(rows: rows, cols: cols);
 
@@ -290,7 +320,7 @@ class CoopGameSnapshot {
   /// snapshot. The screen renders only its local player's result.
   ActivePiece? ghostFor(CoopPlayer player) {
     final active = activeFor(player);
-    if (active == null || gameOver) return null;
+    if (active == null || roundOver) return null;
     var ghost = active;
     final gameBoard = GameBoard(config)..cells = buildBoard();
     final other = activeFor(
@@ -323,7 +353,8 @@ class CoopGameSnapshot {
   });
 
   Map<String, dynamic> toJson() => {
-    'version': 8,
+    'version': 10,
+    'roundId': roundId,
     'revision': revision,
     'rows': rows,
     'cols': cols,
@@ -345,6 +376,8 @@ class CoopGameSnapshot {
     'redCavityCharges': redCavityCharges,
     'blueCavityCharges': blueCavityCharges,
     'gameOver': gameOver,
+    'puzzleCleared': puzzleCleared,
+    'puzzleSpeedBonus': puzzleSpeedBonus,
   };
 }
 
@@ -352,15 +385,27 @@ class CoopGameSnapshot {
 /// applies both players' actions and broadcasts snapshots, avoiding two
 /// devices independently resolving simultaneous locks or line clears.
 class CoopGameEngine {
-  CoopGameEngine({required int seed, this.variant = CoopVariant.fixed})
-    : _redBag = PieceBag(random: Random(seed ^ 0x52ED), pieces: _coopPieces),
-      _blueBag = PieceBag(random: Random(seed ^ 0xB1E0), pieces: _coopPieces),
-      board = GameBoard(config) {
+  CoopGameEngine({
+    required int seed,
+    this.variant = CoopVariant.fixed,
+    this.roundId = 0,
+  }) : _redBag = PieceBag(random: Random(seed ^ 0x52ED), pieces: _coopPieces),
+       _blueBag = PieceBag(random: Random(seed ^ 0xB1E0), pieces: _coopPieces),
+       board = GameBoard(variant.isPuzzle ? puzzleConfig : config) {
+    _redCavityCharges = variant.startingCavityCharges;
+    _blueCavityCharges = variant.startingCavityCharges;
+    if (variant.isPuzzle) {
+      board.seedPuzzle(Random(seed ^ 0x50555A5A), (kind, tri) {
+        if (kind == CellKind.full) return duoFullColor;
+        return tri == TriHalf.bl ? duoBlColor : duoTrColor;
+      });
+    }
     _spawn(CoopPlayer.red);
     _spawn(CoopPlayer.blue);
   }
 
   static const config = Config(rows: 20, cols: 8);
+  static const puzzleConfig = Config(rows: 16, cols: 8);
   static final _coopPieces = Pieces.byNames(const [
     'I4',
     'O4',
@@ -373,6 +418,7 @@ class CoopGameEngine {
   final PieceBag _blueBag;
   final GameBoard board;
   final CoopVariant variant;
+  final int roundId;
   ActivePiece? _redPiece;
   ActivePiece? _bluePiece;
   bool _redMirrored = false;
@@ -393,6 +439,25 @@ class CoopGameEngine {
   int _blueCavityCharges = 1;
   int revision = 0;
   bool gameOver = false;
+  bool puzzleCleared = false;
+  int puzzleSpeedBonus = 0;
+  bool _puzzleSpeedBonusAwarded = false;
+
+  bool get roundOver => gameOver || puzzleCleared;
+  bool get puzzleSpeedBonusAwarded => _puzzleSpeedBonusAwarded;
+
+  /// Applies the host's elapsed-time award exactly once after a Puzzle win.
+  /// It becomes part of the authoritative snapshot, so both peers finish
+  /// with the same score without any extra database writes.
+  void awardPuzzleSpeedBonus(Duration elapsed) {
+    if (!variant.isPuzzle || !puzzleCleared || _puzzleSpeedBonusAwarded) {
+      return;
+    }
+    _puzzleSpeedBonusAwarded = true;
+    puzzleSpeedBonus = PuzzleSpeedBonus.forElapsed(elapsed);
+    score += puzzleSpeedBonus;
+    revision++;
+  }
 
   ActivePiece? activeFor(CoopPlayer player) =>
       player == CoopPlayer.red ? _redPiece : _bluePiece;
@@ -427,7 +492,7 @@ class CoopGameEngine {
       player == CoopPlayer.red ? CoopPlayer.blue : CoopPlayer.red;
 
   bool applyAction(CoopPlayer player, CoopAction action) {
-    if (gameOver) return false;
+    if (roundOver) return false;
     if (action == CoopAction.fillCavity) return _fillCavity(player);
     if (activeFor(player) == null) return false;
     return switch (action) {
@@ -460,6 +525,7 @@ class CoopGameEngine {
       // Exactly one recharge per line, awarded only to the player whose
       // action completed it rather than duplicated into both inventories.
       _shiftBothAfterClear(fullRows);
+      _completePuzzleIfReady();
     }
     _recordEffect(
       CoopEffectState(
@@ -484,9 +550,9 @@ class CoopGameEngine {
   }
 
   bool tick() {
-    if (gameOver) return false;
+    if (roundOver) return false;
     var changed = _step(CoopPlayer.red);
-    if (!gameOver) changed = _step(CoopPlayer.blue) || changed;
+    if (!roundOver) changed = _step(CoopPlayer.blue) || changed;
     return changed;
   }
 
@@ -571,7 +637,7 @@ class CoopGameEngine {
     int dropPoints = 0,
   }) {
     final piece = activeFor(player);
-    if (piece == null || gameOver) return;
+    if (piece == null || roundOver) return;
     final scoreBefore = score;
     final lockedCells = piece.cellsOnBoard();
     final newFusions = board.countFusions(piece);
@@ -588,6 +654,7 @@ class CoopGameEngine {
       award = _awardClear(player, fullRows, fusionCount: newFusions);
       board.collapseRows(fullRows);
       _shiftOtherAfterClear(_other(player), fullRows);
+      _completePuzzleIfReady();
     } else {
       combo = 0;
     }
@@ -612,7 +679,16 @@ class CoopGameEngine {
       ),
     );
     revision++;
-    if (!gameOver) _spawn(player);
+    if (!roundOver) _spawn(player);
+  }
+
+  bool _completePuzzleIfReady() {
+    if (!variant.isPuzzle || !board.hasAtMostOneOccupiedRow) return false;
+    puzzleCleared = true;
+    gameOver = false;
+    _redPiece = null;
+    _bluePiece = null;
+    return true;
   }
 
   _CoopClearAward _awardClear(
@@ -736,9 +812,10 @@ class CoopGameEngine {
       }
     }
     return CoopGameSnapshot(
+      roundId: roundId,
       revision: revision,
-      rows: config.rows,
-      cols: config.cols,
+      rows: board.config.rows,
+      cols: board.config.cols,
       cells: cells,
       variant: variant,
       redPiece: _redPiece == null
@@ -761,6 +838,8 @@ class CoopGameEngine {
       redCavityCharges: _redCavityCharges,
       blueCavityCharges: _blueCavityCharges,
       gameOver: gameOver,
+      puzzleCleared: puzzleCleared,
+      puzzleSpeedBonus: puzzleSpeedBonus,
     );
   }
 }

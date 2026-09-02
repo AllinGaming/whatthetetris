@@ -45,10 +45,43 @@ void main() {
     final anim = GameAnimations(vsync: const TestVSync());
     addTearDown(anim.dispose);
 
-    anim.triggerImpactRing(const Offset(3, 4));
+    anim.triggerImpactRing(const Offset(3, 4), color: Colors.redAccent);
 
     expect(anim.impactRingOrigin, const Offset(3, 4));
+    expect(anim.impactRingColor, Colors.redAccent);
     expect(anim.impactRing.isAnimating, isTrue);
+  });
+
+  test('particle bursts stay bounded during simultaneous effects', () {
+    final anim = GameAnimations(vsync: const TestVSync());
+    addTearDown(anim.dispose);
+
+    for (var burst = 0; burst < 20; burst++) {
+      anim.burst(Offset.zero, Colors.cyan, count: 30);
+    }
+
+    expect(anim.activeParticles, hasLength(240));
+  });
+
+  test('multiplayer particle profile holds before its slower fade', () {
+    final anim = GameAnimations(vsync: const TestVSync());
+    addTearDown(anim.dispose);
+
+    anim.burst(
+      Offset.zero,
+      Colors.cyan,
+      count: 1,
+      lifeScale: 1.65,
+      fadeFraction: 0.55,
+    );
+    final particle = anim.activeParticles.single;
+
+    expect(particle.maxLife, greaterThanOrEqualTo(0.45 * 1.65));
+    particle.advance(particle.maxLife * 0.30);
+    expect(particle.opacity, 1);
+    particle.advance(particle.maxLife * 0.25);
+    expect(particle.opacity, lessThan(1));
+    expect(particle.opacity, greaterThan(0));
   });
 
   test('burst count is thinned, not silenced, under reduced motion', () {

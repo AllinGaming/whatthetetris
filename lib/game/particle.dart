@@ -11,6 +11,7 @@ class Particle {
     required this.velocity,
     required this.color,
     required double life,
+    this.fadeFraction = 1,
   }) : life = life,
        maxLife = life;
 
@@ -19,9 +20,16 @@ class Particle {
   final Color color;
   double life;
   final double maxLife;
+  final double fadeFraction;
 
   bool get isDead => life <= 0;
-  double get opacity => (life / maxLife).clamp(0.0, 1.0);
+  double get opacity {
+    final remaining = (life / maxLife).clamp(0.0, 1.0);
+    final fadeWindow = fadeFraction.clamp(0.01, 1.0);
+    return remaining >= fadeWindow
+        ? 1
+        : (remaining / fadeWindow).clamp(0.0, 1.0);
+  }
 
   void advance(double dt) {
     position += velocity * dt;

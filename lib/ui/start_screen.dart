@@ -23,6 +23,7 @@ import 'multiplayer_lobby_screen.dart';
 import 'settings_screen.dart';
 import 'widgets/fusion_hero.dart';
 import 'widgets/menu_backdrop.dart';
+import 'widgets/music_volume_slider.dart';
 import 'widgets/neon_text.dart';
 import 'widgets/next_piece_preview.dart';
 
@@ -276,6 +277,7 @@ class StartScreen extends StatelessWidget {
                                   ),
                                 ],
                               ),
+                              MusicVolumeSlider(audio: audio),
                               const SizedBox(height: 8),
                               Text(
                                 'Triangle-half puzzle. Pick a mode to start.',
@@ -376,6 +378,15 @@ class StartScreen extends StatelessWidget {
                                 settings: settings,
                                 highScores: highScores,
                               ),
+                              const SizedBox(height: 12),
+                              _MultiplayerModeCard(
+                                variant: CoopVariant.puzzle,
+                                live: live,
+                                theme: theme,
+                                audio: audio,
+                                settings: settings,
+                                highScores: highScores,
+                              ),
                             ],
                           ),
                         ),
@@ -429,11 +440,7 @@ class _MultiplayerModeCard extends StatelessWidget {
         child: InkWell(
           onTap: () {
             unawaited(audio.play(Sfx.menuTap));
-            unawaited(
-              live.analytics.featureSelected(
-                variant.allowsMirror ? 'multiplayer_mirror' : 'multiplayer',
-              ),
-            );
+            unawaited(live.analytics.featureSelected(variant.featureName));
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => MultiplayerLobbyScreen(
@@ -483,12 +490,14 @@ class _MultiplayerModeCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      Text(
-                        variant.allowsMirror
-                            ? 'Red and blue can mirror their own pieces while building one shared board.'
-                            : 'Red and blue build the same board through a shared room-code lobby.',
-                        style: TextStyle(color: Colors.white70, fontSize: 12),
-                      ),
+                      Text(switch (variant) {
+                        CoopVariant.fixed =>
+                          'Red and blue build the same board through a shared room-code lobby.',
+                        CoopVariant.mirror =>
+                          'Red and blue can mirror their own pieces while building one shared board.',
+                        CoopVariant.puzzle =>
+                          'Clear a shared 2–7-row formation together until only one occupied row remains.',
+                      }, style: TextStyle(color: Colors.white70, fontSize: 12)),
                       const SizedBox(height: 10),
                       Text(
                         'Best team score: ${highScores.bestMultiplayerScoreFor(variant)}',
@@ -502,7 +511,11 @@ class _MultiplayerModeCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Icon(
-                  variant.allowsMirror ? Icons.flip : Icons.group,
+                  switch (variant) {
+                    CoopVariant.fixed => Icons.group,
+                    CoopVariant.mirror => Icons.flip,
+                    CoopVariant.puzzle => Icons.extension,
+                  },
                   size: 34,
                   color: blue,
                 ),

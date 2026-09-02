@@ -80,6 +80,7 @@ class AnalyticsService {
     required int lines,
     required int durationMs,
     required bool isNewBest,
+    int speedBonus = 0,
   }) => _log('game_over', {
     'mode': mode.name,
     'score': score,
@@ -87,6 +88,7 @@ class AnalyticsService {
     'lines': lines,
     'duration_ms': durationMs,
     'is_new_best': isNewBest,
+    'speed_bonus': speedBonus,
   });
 
   Future<void> featureSelected(String feature) =>
@@ -130,10 +132,12 @@ class AnalyticsService {
     required int roundNumber,
     String variant = 'fixed',
   }) async {
-    await _setProperty(
-      'last_mode',
-      variant == 'mirror' ? 'multiplayer_mirror' : 'multiplayer',
-    );
+    final mode = switch (variant) {
+      'mirror' => 'multiplayer_mirror',
+      'puzzle' => 'multiplayer_puzzle',
+      _ => 'multiplayer',
+    };
+    await _setProperty('last_mode', mode);
     await _log('multiplayer_round_started', {
       'role': role,
       'round_number': roundNumber,
@@ -152,6 +156,7 @@ class AnalyticsService {
     required int rotations,
     required int softDrops,
     required int hardDrops,
+    int speedBonus = 0,
     String variant = 'fixed',
   }) => _log('multiplayer_round_ended', {
     'role': role,
@@ -164,6 +169,7 @@ class AnalyticsService {
     'rotations': rotations,
     'soft_drops': softDrops,
     'hard_drops': hardDrops,
+    'speed_bonus': speedBonus,
     'variant': variant,
   });
 
